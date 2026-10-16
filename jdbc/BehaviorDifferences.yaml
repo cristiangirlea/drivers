@@ -81,39 +81,29 @@ behavior_differences:
       ignored with a log warning; connect still succeeds. setEnableClientRequestMfaToken
       does not exist. Both switches default to true.
   6:
-    name: "OAUTH_CLIENT_CREDENTIALS offline required-parameter validation"
+    name: "OAUTH_CLIENT_CREDENTIALS missing-parameter error text"
     status: unknown
     type: enhancement
     reviewed: false
-    impact: high
+    impact: low
     is_breaking_change: true
     status_rationale: |
-      The universal driver routes OAUTH_CLIENT_CREDENTIALS through sf_core, which rejects missing
-      oauth_client_id, oauth_client_secret, and oauth_token_request_url synchronously at connect
-      time. The old driver does not surface the same offline validation or error text.
+      Both drivers reject a missing client id, secret, or token URL at connect. The old
+      driver reports the first gap as vendor 200001 ("passing oauthClientId is required").
+      The new driver names every missing oauth_client_id, oauth_client_secret, and
+      oauth_token_request_url in one error. An empty string fails locally on the new
+      driver and is sent to the token endpoint on the old driver.
   7:
     name: "DATE bind tolerates MON-bearing DATE_OUTPUT_FORMAT (legacy throws at prepare)"
-    status: allowed
+    status: fixed
     type: bugfix
     reviewed: false
     is_breaking_change: false
     impact: low
     status_rationale: |
-      When the session DATE_OUTPUT_FORMAT contains the MON element (e.g. "DD-MON-YYYY" or
-      "DY, DD MON YYYY"), the old driver throws java.lang.IllegalArgumentException
-      ("Illegal pattern character 'O'") at prepareStatement time for any statement with a DATE
-      result column (e.g. SELECT ?::DATE) — regardless of the bind setter used (it fails before
-      any value is bound). The crash comes from the old driver's prepare/describe path eagerly
-      building a java.text.SimpleDateFormat from a mis-translated pattern, even though its read
-      path translates the same MON format correctly (MON -> MMM). MON is a valid Snowflake format
-      element and both drivers read/render "DD-MON-YYYY" identically (READ parity passes).
-
-      The universal driver does not parse output formats at prepareStatement time (no describe
-      round-trip), so it prepares and binds successfully. The bound DATE value is
-      format-independent (epoch-millis), and read-back rendering uses the same
-      SnowflakeDateTimeFormat already proven correct on the read path, so the universal driver's
-      MON-format DATE writes are correct. Replicating the old driver's exception would mean
-      re-introducing a crash for a valid format, so the difference is accepted as a bugfix.
+      Fixed against snowflake-jdbc 4.3.4. Both drivers prepare and bind when
+      DATE_OUTPUT_FORMAT contains MON. The prepare-time crash existed in 3.27.0
+      through 4.0.2.
   8:
     name: "getDate(int, Calendar) tolerates a null Calendar (legacy NPEs)"
     status: allowed
@@ -122,13 +112,9 @@ behavior_differences:
     is_breaking_change: false
     impact: low
     status_rationale: |
-      snowflake-jdbc's SnowflakeBaseResultSet.getDate(int, Calendar) threads cal.getTimeZone()
-      into the converter and dereferences the Calendar unconditionally, so passing a null Calendar
-      throws NullPointerException. The JDBC spec permits a null Calendar for ResultSet.getDate
-      (meaning "use the default timezone"), so the legacy NPE is non-compliant. The universal
-      driver treats a null Calendar as "no timezone" (raw epoch-day date) and returns the value
-      instead of throwing. Replicating the legacy NPE would re-introduce a crash for a spec-allowed
-      argument, so the difference is accepted as a bugfix.
+      getDate(column, null) throws NullPointerException on the old driver and returns
+      the stored calendar day on the new driver. The new driver does not apply the JVM
+      default timezone.
   9:
     name: "TIME->boolean conversion error uses lowercase type token for INT-backed TIME"
     status: allowed
@@ -137,9 +123,8 @@ behavior_differences:
     is_breaking_change: false
     impact: low
     status_rationale: |
-      getBoolean on INT-backed TIME throws INVALID_VALUE_CONVERT with "type:boolean" where legacy
-      renders "type:Boolean"; the universal driver normalizes legacy's Int/BigIntToTimeConverter
-      casing inconsistency, so the lowercase token is accepted.
+      getBoolean on TIME scale 0-4 throws vendor 200038 on both drivers. The old driver
+      says type:Boolean; the new driver says type:boolean. Scale 5-9 already matches.
   10:
     name: "OAuth token/authorization endpoint URLs must use HTTPS (non-loopback http rejected)"
     status: allowed
@@ -148,17 +133,9 @@ behavior_differences:
     is_breaking_change: true
     impact: low
     status_rationale: |
-      The old JDBC driver passes `oauthTokenRequestUrl` / `oauthAuthorizationUrl` into the Nimbus
-      OAuth SDK without scheme validation; an `http://` endpoint only logs a warning
-      (`logIfHttpInUse`) and the request proceeds. The universal driver routes these URLs through
-      sf_core, which requires the `https` scheme and rejects a non-loopback `http://` value at
-      connect time, permitting `http://` only for loopback hosts (127.0.0.0/8, ::1, localhost) for
-      local testing. This is a deliberate, accepted divergence: HTTPS on these endpoints is already
-      required by RFC 6749 §3.1.2.1 and the OAuth 2.0 Security BCP, and the old driver merely warns.
-      The loopback redirect URI used by the authorization-code flow is unaffected. Callers that
-      configured a plaintext `http://` IdP token endpoint must switch to `https://`. Security
-      hardening tracked under SNOW-3663588; mirrors BD#38 in python/ and BD#81 in odbc_tests/
-      BehaviorDifferences.yaml.
+      A non-loopback http oauthTokenRequestUrl or oauthAuthorizationUrl is warned about
+      and then used on the old driver. The new driver rejects it at connect. Loopback
+      http and the redirect URI still work on both. Tracked under SNOW-3663588.
   11:
     name: "addBatch rejects rows with missing placeholder values"
     status: unknown

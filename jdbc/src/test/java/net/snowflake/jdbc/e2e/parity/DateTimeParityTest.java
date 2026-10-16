@@ -879,13 +879,6 @@ public class DateTimeParityTest {
    * Write parity uses only the default profile; the boolean session flags affect getter behaviour,
    * not bind-side serialization. The one bind-relevant flag (CLIENT_TREAT_TIME_AS_WALL_CLOCK_TIME)
    * is connection-time only and needs a separate harness pair, tracked as a follow-up.
-   *
-   * <p>DATE write cells whose output format contains the {@code MON} element are skipped: the old
-   * driver throws {@code IllegalArgumentException("Illegal pattern character 'O'")} at {@code
-   * prepareStatement} time for a DATE result column under such a format, so every cell would diff
-   * only because the old driver crashes before binding. This is an accepted behavior difference
-   * (see {@code BehaviorDifferences.yaml} #7 — the universal driver correctly tolerates the valid
-   * MON format). The read matrix still exercises those formats.
    */
   static Stream<Arguments> dateWriteCells() {
     return writeCells(SfType.DATE);
@@ -916,9 +909,6 @@ public class DateTimeParityTest {
     Stream.Builder<Arguments> out = Stream.builder();
     for (String tz : TIMEZONES.get(type)) {
       for (String fmt : FORMATS.get(type)) {
-        if (type == SfType.DATE && fmt.contains("MON")) {
-          continue;
-        }
         out.add(Arguments.of(tz, fmt));
       }
     }
