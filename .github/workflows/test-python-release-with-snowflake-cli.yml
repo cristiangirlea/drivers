@@ -17,14 +17,34 @@ permissions:
   contents: read
 
 jobs:
+  allowed-branch:
+    runs-on: ubuntu-slim
+    steps:
+      - name: Allow only main and release branches
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          case "$REF" in
+            refs/heads/main|refs/heads/release/*)
+              echo "Running from ${REF}"
+              ;;
+            *)
+              echo "::error::This workflow only runs from main or release/* (selected ${REF})"
+              exit 1
+              ;;
+          esac
+
   trigger-snowflake-cli-tests:
+    needs: allowed-branch
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
     # ubuntu-slim jobs are terminated after 15 minutes.
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
       - name: Run Snowflake CLI UD tests
         env:
-          GH_TOKEN: ${{ secrets.DRIVER_MIRROR_TOKEN }}
+          GH_TOKEN: ${{ secrets.SNOWFLAKE_EMU_TOKEN }}
           UD_BRANCH: ${{ inputs.ud-branch || github.ref_name }}
         run: |
           set -euo pipefail
