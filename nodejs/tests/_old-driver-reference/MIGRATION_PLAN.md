@@ -58,6 +58,8 @@ Deferred work — covered **last**, only once the corresponding feature support 
     (`should_store_id_token_after_successful_browser_login`,
     `should_authenticate_with_cached_id_token`,
     `should_retry_with_browser_flow_when_cached_id_token_fails`).
+  - [`authentication/testMfa.js`](./authentication/testMfa.js) — migrated to
+    `nodejs/tests/e2e/authentication/user-password-mfa.test.ts`.
   - [`authentication/testOauth.js`](./authentication/testOauth.js) — not a whole-file
     move. `Successful connection` runs as `oauth should authenticate with pre acquired access token`.
     `Mismatched username` runs as `should reject a mismatched username for a pre-acquired token`.

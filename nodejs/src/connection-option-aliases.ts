@@ -27,6 +27,8 @@ const CONNECTION_OPTION_ALIASES: Record<string, string> = {
   workloadIdentityImpersonationPath: 'workload_identity_impersonation_path',
   workloadIdentityAwsUseOutboundToken: 'workload_identity_aws_use_outbound_token',
   clientStoreTemporaryCredential: 'client_store_temporary_credential',
+  passcode: 'passcode',
+  passcodeInPassword: 'passcodeInPassword',
   database: 'database',
   schema: 'schema',
   warehouse: 'warehouse',

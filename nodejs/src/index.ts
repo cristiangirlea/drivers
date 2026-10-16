@@ -315,6 +315,18 @@ export type ConnectionOptions = Record<string, unknown> & {
    */
   noProxy?: string;
   /**
+   * The 6-digit TOTP code for `USERNAME_PASSWORD_MFA` authenticator. When this is
+   * omitted the driver sends a Duo push instead.
+   */
+  passcode?: string;
+  /**
+   * When true, the TOTP code is the last six digits of `password` and the driver
+   * splits it off before login.
+   *
+   * @default false
+   */
+  passcodeInPassword?: boolean;
+  /**
    * Replaces the system-browser launch used by `EXTERNALBROWSER` SSO and
    * `OAUTH_AUTHORIZATION_CODE`. The driver still binds the loopback
    * listener and waits for the IdP redirect; this function only receives

@@ -7,7 +7,7 @@ one exclusively-locked identity for its duration.
 Only manipulates key *names* already present in the decoded parameters file;
 never needs to know or print the actual secret values.
 
-Usage: bind_pool_user.py <resource-name-from-lock-step> <python|odbc|jdbc>
+Usage: bind_pool_user.py <resource-name-from-lock-step> <python|odbc|jdbc|nodejs>
 Example: bind_pool_user.py mfa-pool-03 python
 """
 import json
@@ -31,7 +31,7 @@ MFA_KEYS = (
 
 def main():
     if len(sys.argv) != 3:
-        raise SystemExit(f"usage: {sys.argv[0]} <resource-name> <python|odbc|jdbc>")
+        raise SystemExit(f"usage: {sys.argv[0]} <resource-name> <python|odbc|jdbc|nodejs>")
     resource_name, language = sys.argv[1], sys.argv[2]
 
     match = re.search(r"(\d+)$", resource_name)

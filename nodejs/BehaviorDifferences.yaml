@@ -808,12 +808,12 @@ behavior_differences:
     impact: medium
     old_driver_behavior: |
       The connection option defaults to false. Callers must set
-      clientStoreTemporaryCredential=true to cache ID, OAuth, or MFA tokens.
+      clientStoreTemporaryCredential=true to cache ID or OAuth tokens.
     new_driver_behavior: |
       clientStoreTemporaryCredential defaults to true. An explicit true or false
       always wins.
     description: |
-      Callers that omitted the option now cache tokens. Set
+      Callers that omitted the option now cache ID and OAuth tokens. Set
       clientStoreTemporaryCredential=false to keep the old opt-in behavior.
 
   40:
@@ -1953,9 +1953,9 @@ behavior_differences:
     new_driver_behavior: |
       createConnection throws InvalidParameterError "Unknown connection option: <key>",
       `error.code` undefined. This includes old-driver options the new driver does not
-      support: clientRequestMFAToken, disableConsoleLogin (BD#63), forceStageBindError,
+      support: clientRequestMFAToken (BD#117), disableConsoleLogin (BD#63), forceStageBindError,
       gcsUseDownscopedCredential, includeRetryReason, oauthChallengeMethod,
-      oauthHttpAllowed, passcodeInPassword, resultPrefetch, serviceName,
+      oauthHttpAllowed, resultPrefetch, serviceName,
       sfRetryMaxLoginRetries (BD#90) and validateDefaultParameters.
     description: |
       An option that is silently ignored leaves the application believing it took effect,
@@ -2256,6 +2256,29 @@ behavior_differences:
       `cancel()` does not change that result.
     status_rationale: |
       Cancel is non-blocking, as in ODBC SQLCancel. The abort response is not part of cancel().
+
+  117:
+    name: 'MFA token caching is controlled by clientStoreTemporaryCredential'
+    status: unknown
+    type: api_incompatibility
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      clientRequestMFAToken=true caches the MFA token for USERNAME_PASSWORD_MFA logins.
+      clientStoreTemporaryCredential covers only EXTERNALBROWSER ID tokens and
+      OAUTH_AUTHORIZATION_CODE tokens.
+    new_driver_behavior: |
+      clientStoreTemporaryCredential controls MFA token caching as well as ID and OAuth
+      token caching, and defaults to true (BD#39). clientRequestMFAToken is rejected
+      as an unknown connection option.
+    description: |
+      If this difference blocks users, the driver could follow
+      Python and accept clientRequestMFAToken as an alias that maps to
+      client_store_temporary_credential, and this entry would be removed.
+    status_rationale: |
+      The other new drivers made the same consolidation onto one flag, which now
+      covers MFA as well.
 
   122:
     name: 'timeout has seconds granularity, no default, and accepts 0 and negative values'
