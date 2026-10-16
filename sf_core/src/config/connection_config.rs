@@ -173,6 +173,25 @@ fn non_empty_string(settings: &ParamStore, key: crate::config::ParamKey) -> Opti
     settings.get_string(key).filter(|value| !value.is_empty())
 }
 
+// TODO(SNOW-3575172): send this value as STS AssumeRole ExternalId.
+fn unsupported_aws_external_id(settings: &ParamStore, key: &str) -> bool {
+    if !key.eq_ignore_ascii_case("workloadIdentityAwsExternalId") {
+        return false;
+    }
+    let Some(value) = Settings::get_string(settings, key) else {
+        return false;
+    };
+    if value.is_empty() {
+        return false;
+    }
+    settings
+        .get_string(AUTHENTICATOR)
+        .is_some_and(|auth| auth.eq_ignore_ascii_case("WORKLOAD_IDENTITY"))
+        && settings
+            .get_string(WORKLOAD_IDENTITY_PROVIDER)
+            .is_some_and(|provider| WifProvider::parse_str(&provider) == Some(WifProvider::Aws))
+}
+
 /// Characters permitted in a Snowflake account identifier: ASCII alphanumerics
 /// plus `.`, `-`, and `_` (underscores are normalized to hyphens in the derived
 /// host). Used by `validate_settings` to reject account values carrying
@@ -1175,14 +1194,24 @@ pub fn validate_settings(settings: &ParamStore) -> Vec<ValidationIssue> {
     // --- UnknownParameter: keys not in ParamRegistry ---
     let registry = crate::config::param_registry::registry();
     for key in settings.keys() {
-        if !registry.is_known(key) {
-            issues.push(ValidationIssue {
-                severity: ValidationSeverity::Warning,
-                parameter: key.clone(),
-                message: format!("Unknown parameter '{key}'"),
-                code: ValidationCode::UnknownParameter,
-            });
+        if registry.is_known(key) {
+            continue;
         }
+        if unsupported_aws_external_id(settings, key) {
+            issues.push(ValidationIssue {
+                severity: ValidationSeverity::Error,
+                parameter: key.clone(),
+                message: "Connection property workloadIdentityAwsExternalId is not enabled".into(),
+                code: ValidationCode::InvalidValue,
+            });
+            continue;
+        }
+        issues.push(ValidationIssue {
+            severity: ValidationSeverity::Warning,
+            parameter: key.clone(),
+            message: format!("Unknown parameter '{key}'"),
+            code: ValidationCode::UnknownParameter,
+        });
     }
 
     issues
@@ -3551,6 +3580,24 @@ mod tests {
                     && i.message.contains("single-hop")
             }),
             "Multi-hop Azure impersonation should fail validation with InvalidValue, got: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn validate_aws_external_id_rejected() {
+        let mut pairs = wif_base_settings("AWS");
+        pairs.push((
+            "workloadIdentityAwsExternalId",
+            Setting::String("external-id".into()),
+        ));
+        let issues = validate_settings(&settings_from(&pairs));
+        assert!(
+            issues.iter().any(|i| {
+                i.parameter == "workloadIdentityAwsExternalId"
+                    && i.severity == ValidationSeverity::Error
+                    && i.message.contains("not enabled")
+            }),
+            "Non-empty AWS external id should fail validation, got: {issues:?}"
         );
     }
 

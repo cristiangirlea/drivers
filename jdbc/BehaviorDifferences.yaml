@@ -1281,3 +1281,68 @@ behavior_differences:
     description: |
       Aligns array-bind batch failures with the JDBC contract. Applications should catch
       `SQLException` or `BatchUpdateException`.
+  73:
+    name: "workloadIdentityAwsExternalId is not sent on AWS AssumeRole"
+    status: todo
+    type: api_incompatibility
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      With authenticator=WORKLOAD_IDENTITY and workloadIdentityProvider=AWS, snowflake-jdbc
+      passes workloadIdentityAwsExternalId to STS AssumeRole as ExternalId when
+      SF_ENABLE_WIF_AWS_EXTERNAL_ID is true. When that variable is unset, a non-empty
+      workloadIdentityAwsExternalId fails the connection with WORKLOAD_IDENTITY_FLOW_ERROR
+      ("Connection property workloadIdentityAwsExternalId is not enabled"). For any other
+      authenticator or provider the property is ignored.
+    new_driver_behavior: |
+      sf_core's AWS AssumeRole call has no external-id field. With
+      authenticator=WORKLOAD_IDENTITY and workloadIdentityProvider=AWS, a non-empty
+      workloadIdentityAwsExternalId fails the connection ("Connection property
+      workloadIdentityAwsExternalId is not enabled"). The value is not sent. For any
+      other authenticator or provider it stays an unknown connection parameter and connect
+      continues.
+    description: |
+      Role-chaining that depends on an STS external ID works on snowflake-jdbc when
+      SF_ENABLE_WIF_AWS_EXTERNAL_ID is set. The universal JDBC driver rejects a non-empty
+      value until sf_core can send ExternalId (SNOW-3575172).
+  74:
+    name: "Azure workloadIdentityImpersonationPath of one service principal is accepted"
+    status: allowed
+    type: enhancement
+    reviewed: false
+    is_breaking_change: false
+    impact: low
+    old_driver_behavior: |
+      authenticator=WORKLOAD_IDENTITY with workloadIdentityProvider=AZURE and any non-empty
+      workloadIdentityImpersonationPath fails with WORKLOAD_IDENTITY_FLOW_ERROR
+      ("Identity impersonation is not available on Azure").
+    new_driver_behavior: |
+      sf_core accepts exactly one Azure service-principal client id in
+      workload_identity_impersonation_path and rejects any other hop count. JDBC follows
+      that shared behavior. A native AKS workload identity (AZURE_CLIENT_ID, AZURE_TENANT_ID,
+      and AZURE_FEDERATED_TOKEN_FILE injected by the Azure Workload Identity webhook) is
+      exchanged directly; impersonation is rejected in that environment.
+    description: |
+      snowflake-jdbc rejects every Azure impersonation path. The universal driver uses the
+      sf_core implementation shared with the other wrappers, which allows a single Azure hop.
+  75:
+    name: "Workload Identity connect failures omit SQLSTATE and vendor code"
+    status: allowed
+    type: api_incompatibility
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      Client-local Workload Identity connect failures (missing or invalid provider, missing
+      OIDC token, malformed OIDC token, rejected AWS external id) throw
+      WORKLOAD_IDENTITY_FLOW_ERROR with SQLSTATE 08000 and vendor code 200071.
+    new_driver_behavior: |
+      The same failures still throw SQLException with a message that identifies the bad
+      setting, but getSQLState() is null and getErrorCode() is 0. sf_core reports them as
+      ordinary missing or invalid parameters; JDBC does not remap them to
+      WORKLOAD_IDENTITY_FLOW_ERROR.
+    description: |
+      snowflake-jdbc folds every local WIF connect rejection into one flow-error identity.
+      The universal driver keeps the shared sf_core parameter-validation kinds used by the
+      other wrappers.

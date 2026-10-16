@@ -45,6 +45,21 @@ class ParameterKeyNormalizerTest {
   }
 
   @Test
+  void shouldMapLegacyWorkloadIdentityProperties() {
+    assertEquals(
+        "workload_identity_provider", ParameterKeyNormalizer.normalize("workloadIdentityProvider"));
+    assertEquals(
+        "workload_identity_entra_resource",
+        ParameterKeyNormalizer.normalize("workloadIdentityEntraResource"));
+    assertEquals(
+        "workload_identity_impersonation_path",
+        ParameterKeyNormalizer.normalize("workloadIdentityImpersonationPath"));
+    assertEquals(
+        "workload_identity_aws_use_outbound_token",
+        ParameterKeyNormalizer.normalize("WORKLOADIDENTITYAWSUSEOUTBOUNDTOKEN"));
+  }
+
+  @Test
   void shouldMapLegacyOauthProperties() {
     assertEquals("oauth_client_id", ParameterKeyNormalizer.normalize("oauthClientId"));
     assertEquals("oauth_client_secret", ParameterKeyNormalizer.normalize("oauthClientSecret"));

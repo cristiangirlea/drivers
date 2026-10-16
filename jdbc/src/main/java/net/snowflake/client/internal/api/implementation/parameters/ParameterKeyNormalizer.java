@@ -31,6 +31,12 @@ public final class ParameterKeyNormalizer {
     LEGACY_KEY_ALIASES.put("oauthtokenrequesturl", "oauth_token_request_url");
     LEGACY_KEY_ALIASES.put("oauthredirecturi", "oauth_redirect_uri");
     LEGACY_KEY_ALIASES.put("oauthscope", "oauth_scope");
+    LEGACY_KEY_ALIASES.put("workloadidentityprovider", "workload_identity_provider");
+    LEGACY_KEY_ALIASES.put("workloadidentityentraresource", "workload_identity_entra_resource");
+    LEGACY_KEY_ALIASES.put(
+        "workloadidentityimpersonationpath", "workload_identity_impersonation_path");
+    LEGACY_KEY_ALIASES.put(
+        "workloadidentityawsuseoutboundtoken", "workload_identity_aws_use_outbound_token");
     LEGACY_KEY_ALIASES.put("logintimeout", "login_timeout");
     LEGACY_KEY_ALIASES.put("allowunderscoresinhost", "preserve_underscores_in_hostname");
     LEGACY_KEY_ALIASES.put("querytimeoutseconds", "query_timeout");

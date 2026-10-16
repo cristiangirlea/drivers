@@ -2328,6 +2328,7 @@ static PARAM_DEFS: &[ParamDef] = &[
     // ── Workload Identity Federation (WIF) ────────────────────────────
     ParamDef::builder()
         .canonical_name(param_names::WORKLOAD_IDENTITY_PROVIDER.as_str())
+        .aliases(aliases![Jdbc; "workloadIdentityProvider"])
         .value_type(ValueType::String)
         .required(Required::WhenAuthMethod("WORKLOAD_IDENTITY"))
         .sensitive(false)
@@ -2338,6 +2339,7 @@ static PARAM_DEFS: &[ParamDef] = &[
         .build(),
     ParamDef::builder()
         .canonical_name(param_names::WORKLOAD_IDENTITY_ENTRA_RESOURCE.as_str())
+        .aliases(aliases![Jdbc; "workloadIdentityEntraResource"])
         .value_type(ValueType::String)
         .sensitive(false)
         .auth(true)
@@ -2358,6 +2360,7 @@ static PARAM_DEFS: &[ParamDef] = &[
         .build(),
     ParamDef::builder()
         .canonical_name(param_names::WORKLOAD_IDENTITY_IMPERSONATION_PATH.as_str())
+        .aliases(aliases![Jdbc; "workloadIdentityImpersonationPath"])
         .value_type(ValueType::String)
         .sensitive(false)
         .auth(true)
@@ -2367,6 +2370,7 @@ static PARAM_DEFS: &[ParamDef] = &[
         .build(),
     ParamDef::builder()
         .canonical_name(param_names::WORKLOAD_IDENTITY_AWS_USE_OUTBOUND_TOKEN.as_str())
+        .aliases(aliases![Jdbc; "workloadIdentityAwsUseOutboundToken"])
         .value_type(ValueType::Bool)
         .default(DefaultValue::Bool(false))
         .sensitive(false)
@@ -3080,6 +3084,26 @@ mod tests {
                 &[Jdbc],
             ),
             ("enablePutGet", "enable_put_get", &[Jdbc]),
+            (
+                "workloadIdentityProvider",
+                "workload_identity_provider",
+                &[Jdbc],
+            ),
+            (
+                "workloadIdentityEntraResource",
+                "workload_identity_entra_resource",
+                &[Jdbc],
+            ),
+            (
+                "workloadIdentityImpersonationPath",
+                "workload_identity_impersonation_path",
+                &[Jdbc],
+            ),
+            (
+                "workloadIdentityAwsUseOutboundToken",
+                "workload_identity_aws_use_outbound_token",
+                &[Jdbc],
+            ),
             // Python-only legacy kwarg.
             (
                 "ENABLE_STAGE_S3_PRIVATELINK_FOR_US_EAST_1",
