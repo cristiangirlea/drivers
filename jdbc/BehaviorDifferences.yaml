@@ -167,13 +167,10 @@ behavior_differences:
     is_breaking_change: true
     impact: low
     status_rationale: |
-      The old driver's PreparedStatement.addBatch() iterates only the parameters that have been
-      set on the current row and merges them column-wise into the batch, with no check that every
-      placeholder has a value. A row that is missing one or more placeholder bindings is silently
-      added, producing an inconsistent batch (columns with different row counts) which then
-      either fails at the server or applies stale per-column state. The new driver validates at
-      addBatch() time via BatchColumnValidator and throws SnowflakeSQLException("Missing value
-      for parameter index: N") so the offending row is rejected at the call site.
+      After clearParameters, a later addBatch row that omits an index bound on the first
+      row throws "Missing value for parameter index: N" on the new driver. The old driver
+      keeps the row. setNull counts as a value. An index missing from every row, including
+      the first, is accepted on both.
   12:
     name: "JDBC wrapper interface is correctly implemented"
     status: unknown
@@ -182,51 +179,43 @@ behavior_differences:
     impact: low
     is_breaking_change: false
     status_rationale: |
-      The old driver implements java.sql.Wrapper inconsistently - some classes support
-      isWrapperFor/unwrap while others throw SQLFeatureNotSupportedException.
-      The new driver applies DelegatingWrapper everywhere the interface is applicable,
-      so extension access works uniformly.
+      unwrap on Connection, Statement, and ResultSet already works on both drivers. The
+      old driver throws from DatabaseMetaData.isWrapperFor, returns null from
+      DataSource.unwrap, and has no unwrap on createClob() or PooledConnection. The new
+      driver implements those. getClob() still has no unwrap on either driver.
   13:
-    name: "SnowflakeClob.setString overwrites in-place; legacy driver inserts at position"
+    name: "SnowflakeClob.setString overwrites in place; old driver inserts"
     status: unknown
     type: bugfix
     reviewed: false
     is_breaking_change: true
-    impact: medium
-    status_rationale: |
-      The legacy snowflake-jdbc SnowflakeClob implements setString via StringBuffer.insert at the
-      1-based position, shifting trailing content. The universal driver's SnowflakeClob replaces
-      the character range starting at that position (JDBC Clob contract: write starting at pos,
-      not insert). Example: starting from "hello world", setString(1, "HELLO") yields
-      "HELLO world" (new) vs "HELLOhello world" (old). Pooling/createClob paths only append from
-      an empty Clob today; middle overwrite is not required for #387 but the semantic gap is
-      documented for follow-up alignment review.
-  14:
-    name: "SnowflakeClob.setAsciiStream / setCharacterStream ported from legacy driver"
-    status: fixed
-    type: enhancement
-    reviewed: false
-    is_breaking_change: false
     impact: low
     status_rationale: |
-      Legacy snowflake-jdbc SnowflakeClob exposes setAsciiStream and setCharacterStream via small
-      StringBuffer-backed stream helpers. The universal driver now ports a minimal subset for the
-      pooling phase: append/replace ASCII bytes and append-on-flush character writes. Full parity
-      review (position semantics, mid-buffer overwrite edge cases) is deferred; createClob +
-      setString/setClob remain the primary pooling path in #387.
-  15:
-    name: "SnowflakeClob.free invalidates handle; legacy driver clears buffer and keeps Clob usable"
+      setString into existing text inserts and shifts the tail on the old driver and
+      overwrites on the new driver. "hello world" plus setString(1, "HELLO") is
+      "HELLOhello world" versus "HELLO world". An empty Clob, or a write at length + 1,
+      matches on both.
+  14:
+    name: "SnowflakeClob.setAsciiStream writes characters; old driver writes decimal text"
     status: allowed
     type: bugfix
     reviewed: false
     is_breaking_change: true
     impact: low
     status_rationale: |
-      JDBC requires that after Clob.free() the object is invalid and subsequent method calls
-      throw SQLException. The universal driver nulls its buffer and rejects further access.
-      Legacy snowflake-jdbc assigns buffer = new StringBuffer(), leaving a usable (empty) Clob.
-      The universal behavior matches the spec; callers depending on post-free reuse on the old
-      driver must allocate a fresh Clob.
+      setCharacterStream appends on flush on both drivers. Writing 'a' then 'b' through
+      setAsciiStream yields "98" on the old driver and "ab" on the new driver.
+  15:
+    name: "SnowflakeClob.free invalidates the handle; old driver keeps it usable"
+    status: allowed
+    type: bugfix
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    status_rationale: |
+      free() leaves an empty usable Clob on the old driver. The new driver rejects later
+      calls. A second free() is a no-op on the new driver. createClob() throws
+      SQLException; getClob() throws an unchecked exception with the same message.
   16:
     name: "SnowflakeClob.position searches forward; old driver searches backward"
     status: allowed
