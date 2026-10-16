@@ -1,8 +1,12 @@
 /* oxlint-disable no-console */
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { BUILD_CORE_PACKAGE_DIR, BUILD_SDK_PACKAGE_DIR, ROOT_DIR } from './common.mjs';
+import {
+  BUILD_CORE_PACKAGE_DIR,
+  BUILD_SDK_PACKAGE_DIR,
+  ROOT_DIR,
+  executeCommand,
+} from './common.mjs';
 
 const OLD_SDK_TYPES_PATH = path.join(
   ROOT_DIR,
@@ -46,16 +50,7 @@ for (const dir of [BUILD_SDK_PACKAGE_DIR, BUILD_CORE_PACKAGE_DIR]) {
 }
 
 if (packageDirs.length > 0) {
-  const npmCli = process.env.npm_execpath;
-  execFileSync(
-    npmCli ? process.execPath : 'npm',
-    [...(npmCli ? [npmCli] : []), 'link', '--silent', '--no-audit', ...packageDirs],
-    {
-      cwd: ROOT_DIR,
-      stdio: 'inherit',
-      shell: process.platform === 'win32' && !npmCli,
-    },
-  );
+  executeCommand('npm', ['link', '--silent', '--no-audit', ...packageDirs]);
   console.log('Linked packages:');
   for (const dir of packageDirs) {
     console.log(`  ${dir}`);

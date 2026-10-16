@@ -6,6 +6,7 @@
     "lib": ["ES2023"],
     "sourceMap": true,
     "strict": true,
+    "allowJs": true,
     "skipLibCheck": true,
     "declaration": true,
     "isolatedModules": true,

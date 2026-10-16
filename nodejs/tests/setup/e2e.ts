@@ -1,7 +1,4 @@
-import { execFileSync } from 'node:child_process';
-import path from 'node:path';
-
-const ROOT_DIR = path.resolve(import.meta.dirname, '../..');
+import { executeCommand } from '../../scripts/common.mjs';
 
 export default function setup() {
   // WIF unpacks a prebuilt addon; local runs may already have `_build`.
@@ -11,9 +8,6 @@ export default function setup() {
 
   // Build and link for both e2e and e2e-old-driver to resolve SDK types in tests.
   for (const script of ['build:core', 'build:sdk', 'build:link-local']) {
-    execFileSync('npm', ['run', script], {
-      cwd: ROOT_DIR,
-      stdio: 'inherit',
-    });
+    executeCommand('npm', ['run', script]);
   }
 }

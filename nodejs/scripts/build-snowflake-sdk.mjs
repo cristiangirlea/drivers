@@ -1,6 +1,5 @@
 /* oxlint-disable no-console */
 import { readNapiConfig } from '@napi-rs/cli';
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import {
@@ -8,6 +7,7 @@ import {
   NODE_SDK_PACKAGE,
   NODE_SDK_PACKAGE_JSON_PATH,
   ROOT_DIR,
+  executeCommand,
 } from './common.mjs';
 
 const TSCONFIG_NPM_PATH = path.join(ROOT_DIR, 'tsconfig.npm.json');
@@ -26,10 +26,7 @@ await fs.rm(BUILD_SDK_PACKAGE_DIR, { recursive: true, force: true });
 // 2. Compile `src/` into the package `dist/`. The generated native types must
 //    already exist (produced by `build:core`); without them `tsc` cannot type
 //    the loader.
-execFileSync('npx', ['tsc', '-p', TSCONFIG_NPM_PATH], {
-  cwd: ROOT_DIR,
-  stdio: 'inherit',
-});
+executeCommand('npx', ['tsc', '-p', TSCONFIG_NPM_PATH]);
 
 // 3. Copy the workspace package.json and add `optionalDependencies`. Platform
 //    package names come from `readNapiConfig` (the public API `prePublish`

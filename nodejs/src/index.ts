@@ -18,7 +18,7 @@ import ErrorCode from './constants/ErrorCode.js';
 import { OcspMode as ocspModes } from './constants/OcspMode.js';
 import {
   CoreConnection,
-  getFipsStatus as coreGetFipsStatus,
+  coreGetFipsStatus,
   registerClassConstructors,
   type CoreConnectionInstance,
   type CoreFipsStatus,

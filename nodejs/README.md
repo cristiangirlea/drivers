@@ -12,7 +12,7 @@ The driver is TypeScript (`src/`) on top of a native addon compiled from the Rus
 
 You rarely run these by hand — tests build what they need automatically (see [Testing](#testing)).
 
-`build:core` makes a debug build by default. Pass `--release` for the optimized build and `--fips-tls` to link the FIPS crypto module, e.g. `npm run build:core -- --release --fips-tls`.
+`build:core` makes a debug build by default. Pass `--release` for the optimized build and `--fips` to link the FIPS crypto module, e.g. `npm run build:core -- --release --fips`.
 
 ### Packing
 

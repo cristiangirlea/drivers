@@ -344,14 +344,15 @@ jobs:
           library = {"linux": "libsfodbc.so", "darwin": "libsfodbc.dylib", "win32": "sfodbc.dll"}[sys.platform]
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
               # napi always passes an explicit target. Use the same layout for
-              # ODBC and the final Windows cargo rustc link to reuse dependencies.
+              # ODBC so the Node.js addon build reuses its dependencies.
               print(f"CARGO_BUILD_TARGET={target}", file=env)
               print(f"ODBC_ARTIFACT={release_dir / library}", file=env)
               if sys.platform == "win32":
                   # A unique /MAP argument forces a fresh final link on cache hits.
-                  map_dir = Path(tempfile.mkdtemp(prefix="fips-odbc-map-"))
-                  print(f"ODBC_LINKER_MAP={map_dir / 'sfodbc.map'}", file=env)
-                  print(f"SF_CORE_LINKER_MAP={release_dir / 'nodejs_bridge.map'}", file=env)
+                  odbc_map_dir = Path(tempfile.mkdtemp(prefix="fips-odbc-map-"))
+                  print(f"ODBC_LINKER_MAP={odbc_map_dir / 'sfodbc.map'}", file=env)
+                  nodejs_bridge_map_dir = Path(tempfile.mkdtemp(prefix="fips-nodejs-bridge-map-"))
+                  print(f"NODEJS_BRIDGE_LINKER_MAP={nodejs_bridge_map_dir / 'nodejs_bridge.map'}", file=env)
 
       - name: Restore Rust artifact cache
         id: rust-cache
@@ -389,11 +390,11 @@ jobs:
             Sort-Object -Unique |
             ForEach-Object { $_ | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append }
 
-      # Build and link the addon so the inspection below resolves it the same
-      # way src/core/index.ts does.
+      # On Windows, `nodejs_bridge/build.rs` reads NODEJS_BRIDGE_LINKER_MAP and
+      # makes the linker write the map file to that path.
       - name: Build Node.js addon
         working-directory: nodejs
-        run: npm run build:core && npm run build:link-local
+        run: npm run build:core -- --release --fips
 
       - name: Inspect linked crypto
         shell: python {0}
@@ -406,33 +407,27 @@ jobs:
 
           package_dir = Path("nodejs/_build/@snowflake/sdk-core")
           package = json.loads((package_dir / "package.json").read_text(encoding="utf-8"))
-          # Resolve the linked package just as src/core/index.ts does, rather
-          # than inspecting an unrelated target/ DLL or a stale .node copy.
-          node_artifact = subprocess.check_output(
-              ["node", "-p", f"require.resolve({json.dumps(package['name'])})"],
-              cwd="nodejs",
-              text=True,
-          ).strip()
-          if Path(node_artifact).resolve() != (package_dir / package["main"]).resolve():
-              raise RuntimeError("Node.js did not resolve the freshly built FIPS addon")
+          node_artifact = package_dir / package["main"]
           for artifact, linker_map in (
               (os.environ["ODBC_ARTIFACT"], os.environ.get("ODBC_LINKER_MAP")),
-              (node_artifact, os.environ.get("SF_CORE_LINKER_MAP")),
+              (node_artifact, os.environ.get("NODEJS_BRIDGE_LINKER_MAP")),
           ):
               command = [sys.executable, "ci/fips/check_linked_crypto.py", artifact]
               if sys.platform == "win32":
                   command.extend(["--linker-map", linker_map])
               subprocess.run(command, check=True)
 
-      - name: Clean up Windows ODBC linker map
-        if: always() && runner.os == 'Windows' && env.ODBC_LINKER_MAP != ''
+      - name: Clean up Windows linker maps
+        if: always() && runner.os == 'Windows'
         shell: python {0}
         run: |
           import os
           from pathlib import Path
           import shutil
 
-          shutil.rmtree(Path(os.environ["ODBC_LINKER_MAP"]).parent)
+          for name in ("ODBC_LINKER_MAP", "NODEJS_BRIDGE_LINKER_MAP"):
+              if os.environ.get(name):
+                  shutil.rmtree(Path(os.environ[name]).parent, ignore_errors=True)
 
       - name: Save Rust artifact cache
         if: always()
