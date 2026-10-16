@@ -110,10 +110,10 @@ public class ClobTests extends SnowflakeIntegrationTestBase {
     Clob clob = connection.createClob();
     clob.setString(1, "hello world");
 
-    // When position is queried from the start on the legacy driver
+    // When position is queried at the 1-based index of the match
     long index = clob.position("world", 7);
 
-    // Then the legacy driver returns a 0-based index when a match is found
+    // Then the old driver returns that index counted from 0
     assertEquals(6, index);
   }
 

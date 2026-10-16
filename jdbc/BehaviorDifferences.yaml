@@ -228,38 +228,25 @@ behavior_differences:
       The universal behavior matches the spec; callers depending on post-free reuse on the old
       driver must allocate a fresh Clob.
   16:
-    name: "SnowflakeClob.position returns 1-based index; legacy driver returns 0-based index"
+    name: "SnowflakeClob.position searches forward; old driver searches backward"
     status: allowed
     type: bugfix
     reviewed: false
     is_breaking_change: true
     impact: low
     status_rationale: |
-      JDBC specifies that position returns the position at which the search string appears,
-      using a 1-based index (or -1 if not found). The universal driver returns index + 1.
-      Legacy snowflake-jdbc returns StringBuffer.lastIndexOf directly (0-based). Example:
-      position("world", 1) on "hello world" returns 7 (new) vs 6 (old).
+      position("world", 1) on "hello world" returns 7 on the new driver and -1 on the old
+      driver. The old driver searches backward and counts from 0.
   17:
-    name: "SnowflakeClob.setString(pos, str, offset, len) treats len as count; legacy uses len as end index"
+    name: "SnowflakeClob.setString copies len characters; old driver uses len as an end index"
     status: allowed
     type: bugfix
     reviewed: false
     is_breaking_change: true
     impact: low
     status_rationale: |
-      JDBC Clob.setString(pos, str, offset, len) defines len as the number of characters to copy
-      starting at offset inside str. The universal driver uses str.substring(offset, offset + len).
-      Legacy snowflake-jdbc uses str.substring(offset, len), treating len as the exclusive end
-      index in str — a Java substring(begin, end) misuse that only matches the spec when
-      offset == 0 (because substring(0, len) equals substring(0, 0 + len)).
-
-      When offset > 0 the drivers diverge. Examples writing at Clob position 1:
-        - setString(1, "XXhelloYY", 2, 5): new -> "hello" (5 chars from offset 2); old -> "hel"
-          (substring(2, 5), three characters ending before the second "l").
-        - setString(1, "abcdef", 1, 4): new -> "bcde"; old -> "bcd" (substring(1, 4)).
-
-      The universal driver fixes the legacy bug; callers that accidentally relied on the old
-      end-index semantics need to adjust len when offset > 0.
+      setString(1, "XXhelloYY", 2, 5) writes "hello" on the new driver and "hel" on the old
+      driver. An offset of 0 matches.
   18:
     name: "Connection.getTransactionIsolation() always returns READ_COMMITTED; legacy round-trips the set value and defaults to NONE"
     status: fixed
@@ -272,27 +259,26 @@ behavior_differences:
       setTransactionIsolation stores NONE or READ_COMMITTED, and getTransactionIsolation returns the
       cached value.
   19:
-    name: "DatabaseMetaData: getFunctionColumns used raw (pre-session-resolved) catalog/schema in result rows"
-    status: unknown
+    name: "getFunctionColumns FUNCTION_CAT stays null until a session flag fills it"
+    status: allowed
     type: bugfix
     reviewed: false
     is_breaking_change: false
     impact: low
     status_rationale: |
-      Result rows used the original null catalog/schema params instead of session-resolved values;
-      null catalog yielded null FUNCTION_CAT even when session context had a real database.
+      A null catalog stays null in FUNCTION_CAT on both drivers. When a session-metadata flag
+      replaces that null, the new driver stores the session database and the old driver stores
+      null.
   20:
-    name: "getFunctionColumns FUNCTION_SCHEM uses actual SHOW-row schema; legacy echoes the input schema pattern"
-    status: unknown
+    name: "getFunctionColumns FUNCTION_SCHEM is the function schema; old driver echoes the schema pattern"
+    status: allowed
     type: bugfix
     reviewed: false
     is_breaking_change: false
     impact: low
     status_rationale: |
-      Legacy snowflake-jdbc populates the FUNCTION_SCHEM column of getFunctionColumns from the input
-      schemaPattern argument (a pre-existing bug), so a wildcard/pattern leaks into the result instead
-      of the function's real schema. The universal driver uses schema_name from the SHOW FUNCTIONS
-      result row, so FUNCTION_SCHEM reflects each function's actual schema.
+      FUNCTION_SCHEM is the function's schema on the new driver. The old driver copies the
+      schema pattern, so % or null appears in the column. An exact schema name matches.
   21:
     name: "ResultSet.isLast() works on query-backed DatabaseMetaData result sets; legacy throws"
     status: allowed
