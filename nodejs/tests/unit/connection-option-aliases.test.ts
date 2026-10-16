@@ -133,13 +133,61 @@ describe('toCoreConnectionOptions', () => {
     },
   );
 
+  it.each([
+    [90000, '90'],
+    [999, '1'],
+    [0, '0'],
+    [-1, '-1'],
+  ])('should convert timeout %s milliseconds to %s seconds', (milliseconds, seconds) => {
+    expect(toCoreConnectionOptions({ timeout: milliseconds })).toEqual({
+      timeout: seconds,
+    });
+  });
+
+  it.each([
+    [10000, '10'],
+    [999, '1'],
+  ])(
+    'should map crlDownloadTimeout %s milliseconds onto crl_http_timeout %s seconds',
+    (milliseconds, seconds) => {
+      expect(toCoreConnectionOptions({ crlDownloadTimeout: milliseconds })).toEqual({
+        crl_http_timeout: seconds,
+      });
+    },
+  );
+
+  it('should map the remaining CRL configure options onto their core parameters', () => {
+    expect(
+      toCoreConnectionOptions({
+        crlDownloadMaxSize: 1048576,
+        crlCacheValidityTime: 3600000,
+        crlCacheDir: '/tmp/crls',
+      }),
+    ).toEqual({
+      crl_max_download_size: '1048576',
+      crl_validity_time: '3600',
+      crl_cache_dir: '/tmp/crls',
+    });
+  });
+
+  it('should reject a non-numeric timeout', () => {
+    expect(() =>
+      createConnection({
+        account: 'test-account',
+        username: 'test-user',
+        password: 'test-password',
+        timeout: 'invalid' as unknown as number,
+      }),
+    ).toThrow("Expected type Int for parameter 'timeout'");
+  });
+
   it('should reject a non-numeric browserActionTimeout', () => {
     expect(() =>
       createConnection({
         account: 'test-account',
         username: 'test-user',
         password: 'test-password',
-        browserActionTimeout: 'invalid',
+        browserActionTimeout: 'invalid' as unknown as number,
       }),
     ).toThrow("Expected type Int for parameter 'browserActionTimeout'");
   });

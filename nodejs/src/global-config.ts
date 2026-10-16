@@ -67,6 +67,39 @@ export interface ConfigureOptions {
   useEnvProxy?: boolean;
 
   /**
+   * HTTP request timeout for CRL download, in milliseconds. Applies to connections created after
+   * the call. The value is rounded down to whole seconds; a positive value under 1000 becomes 1
+   * second.
+   *
+   * @default 10000
+   */
+  crlDownloadTimeout?: number;
+
+  /**
+   * Maximum allowed size of a CRL download response, in bytes. Applies to connections created
+   * after the call.
+   *
+   * @default 20971520 (20 MB)
+   */
+  crlDownloadMaxSize?: number;
+
+  /**
+   * Time after which cached CRL entries are invalidated, in milliseconds. Applies to connections
+   * created after the call. The value is rounded down to whole seconds.
+   *
+   * @default 86400000 (24 hours)
+   */
+  crlCacheValidityTime?: number;
+
+  /**
+   * Directory for the on-disk CRL cache. Applies to connections created after the call.
+   *
+   * @default process.env.SNOWFLAKE_CRL_ON_DISK_CACHE_DIR, otherwise the driver's default cache
+   * directory
+   */
+  crlCacheDir?: string;
+
+  /**
    * Token store that replaces the OS keyring for cached credentials.
    *
    * Once registered, it is used by default for MFA, external browser, and OAuth
@@ -78,7 +111,8 @@ export interface ConfigureOptions {
   customCredentialManager?: CustomCredentialManager;
 }
 
-type ResolvedConfig = Required<Omit<ConfigureOptions, 'customCredentialManager'>>;
+type ResolvedConfig = Required<Omit<ConfigureOptions, 'customCredentialManager' | 'crlCacheDir'>> &
+  Pick<ConfigureOptions, 'crlCacheDir'>;
 
 const buildDefaults = (): ResolvedConfig => ({
   jsonColumnVariantParser: (
@@ -113,6 +147,10 @@ const buildDefaults = (): ResolvedConfig => ({
   },
   xmlParserConfig: {},
   useEnvProxy: true,
+  crlDownloadTimeout: 10000,
+  crlDownloadMaxSize: 20 * 1024 * 1024,
+  crlCacheValidityTime: 86400000,
+  crlCacheDir: process.env.SNOWFLAKE_CRL_ON_DISK_CACHE_DIR,
 });
 
 export const GlobalConfig: ResolvedConfig = {

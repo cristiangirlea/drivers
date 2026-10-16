@@ -1995,6 +1995,7 @@ static PARAM_DEFS: &[ParamDef] = &[
         .build(),
     ParamDef::builder()
         .canonical_name(param_names::RETRY_TIMEOUT.as_str())
+        .aliases(aliases![NodeJs; "timeout"])
         .value_type(ValueType::Int)
         .sensitive(false)
         .auth(false)
@@ -3091,6 +3092,7 @@ mod tests {
             // Legacy Node.js login wall clock. Core `retry_timeout` is a different parameter.
             ("retryTimeout", "login_timeout", &[NodeJs]),
             ("browserActionTimeout", "authentication_timeout", &[NodeJs]),
+            ("timeout", "retry_timeout", &[NodeJs]),
             ("wifHost", "wif_host", &[Jdbc, NodeJs]),
             ("workloadIdentityHost", "wif_host", &[Jdbc]),
             ("workload_identity_host", "wif_host", &[Jdbc, Python]),

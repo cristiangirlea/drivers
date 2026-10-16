@@ -35,6 +35,8 @@ const CONNECTION_OPTION_ALIASES: Record<string, string> = {
   retryTimeout: 'retryTimeout',
   // Core's Node.js alias resolves this spelling to authentication_timeout (BD#59).
   browserActionTimeout: 'browserActionTimeout',
+  // Core's Node.js alias resolves this spelling to retry_timeout (BD#122).
+  timeout: 'timeout',
   useEnvProxy: 'use_proxy_env',
   proxy: 'proxy',
   proxyHost: 'proxy_host',
@@ -56,7 +58,18 @@ const CONNECTION_OPTION_ALIASES: Record<string, string> = {
   crlInMemoryCache: 'crl_enable_memory_caching',
   crlOnDiskCache: 'crl_enable_disk_caching',
   connectionName: 'connection_name',
+  crlDownloadTimeout: 'crl_http_timeout',
+  crlDownloadMaxSize: 'crl_max_download_size',
+  crlCacheValidityTime: 'crl_validity_time',
+  crlCacheDir: 'crl_cache_dir',
 };
+
+const MILLISECOND_OPTIONS = new Set([
+  'browserActionTimeout',
+  'timeout',
+  'crlDownloadTimeout',
+  'crlCacheValidityTime',
+]);
 
 export function toCoreConnectionOptions(options: Record<string, unknown>): Record<string, string> {
   const normalized: Record<string, string> = {};
@@ -64,19 +77,19 @@ export function toCoreConnectionOptions(options: Record<string, unknown>): Recor
     if (value === undefined) {
       continue;
     }
-    if (key === 'browserActionTimeout' && typeof value === 'number' && Number.isFinite(value)) {
-      // Milliseconds in, seconds out (BD#59).
-      // TODO(SNOW-4263660): take seconds, or replace this option with authenticationTimeout.
+    const sfCoreKey = CONNECTION_OPTION_ALIASES[key];
+    if (sfCoreKey === undefined) {
+      throw invalidParameterError(`Unknown connection option: ${key}`);
+    }
+    if (MILLISECOND_OPTIONS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
+      // Milliseconds in, seconds out (BD#59, BD#122, BD#123).
+      // TODO(SNOW-4263660): take seconds, or replace browserActionTimeout with authenticationTimeout.
       let seconds = Math.floor(value / 1000);
       if (value > 0 && seconds === 0) {
         seconds = 1;
       }
-      normalized.browserActionTimeout = String(seconds);
+      normalized[sfCoreKey] = String(seconds);
       continue;
-    }
-    const sfCoreKey = CONNECTION_OPTION_ALIASES[key];
-    if (sfCoreKey === undefined) {
-      throw invalidParameterError(`Unknown connection option: ${key}`);
     }
     normalized[sfCoreKey] = String(value);
   }

@@ -234,6 +234,47 @@ export type ConnectionOptions = Record<string, unknown> & {
    */
   crlOnDiskCache?: boolean;
   /**
+   * Overrides {@link ConfigureOptions.crlDownloadTimeout} for this connection, in milliseconds.
+   * The value is rounded down to whole seconds; a positive value under 1000 becomes 1 second.
+   */
+  crlDownloadTimeout?: number;
+  /**
+   * Overrides {@link ConfigureOptions.crlDownloadMaxSize} for this connection, in bytes.
+   */
+  crlDownloadMaxSize?: number;
+  /**
+   * Overrides {@link ConfigureOptions.crlCacheValidityTime} for this connection, in milliseconds.
+   * The value is rounded down to whole seconds; a positive value under 1000 becomes 1 second.
+   */
+  crlCacheValidityTime?: number;
+  /**
+   * Overrides {@link ConfigureOptions.crlCacheDir} for this connection.
+   */
+  crlCacheDir?: string;
+  /**
+   * Per-attempt timeout of login, query, and other requests, in milliseconds. The value is
+   * rounded down to whole seconds; a positive value under 1000 becomes 1 second. 0 and negative
+   * values behave like an omitted timeout.
+   *
+   * @default login attempts time out after 30 seconds; other requests have no per-request timeout
+   */
+  timeout?: number;
+  /**
+   * Deadline for the whole login, including retries, in seconds. 0 and negative values mean
+   * login has no deadline.
+   *
+   * @default 120
+   */
+  retryTimeout?: number;
+  /**
+   * Time budget for external-browser SSO, native Okta, and OAuth authorization-code login, in
+   * milliseconds.
+   * The value is rounded down to whole seconds; a positive value under 1000 becomes 1 second.
+   *
+   * @default 120000
+   */
+  browserActionTimeout?: number;
+  /**
    * Proxy URL (`[scheme://][user:pass@]host[:port]`). `proxyHost`, `proxyPort`,
    * `proxyProtocol`, `proxyUser`, and `proxyPassword` override matching URL
    * components when both are set.
@@ -407,6 +448,10 @@ export class Connection {
 
     this.#core = new CoreConnection({
       options: toCoreConnectionOptions({
+        crlDownloadTimeout: GlobalConfig.crlDownloadTimeout,
+        crlDownloadMaxSize: GlobalConfig.crlDownloadMaxSize,
+        crlCacheValidityTime: GlobalConfig.crlCacheValidityTime,
+        crlCacheDir: GlobalConfig.crlCacheDir,
         ...coreOptions,
         useEnvProxy: GlobalConfig.useEnvProxy,
       }),
@@ -484,7 +529,9 @@ export class Connection {
         rowOptions: {
           ...this.#defaultRowOptions,
           ...(options.rowMode && { rowMode: options.rowMode }),
-          ...(options.fetchAsString && { fetchAsString: options.fetchAsString }),
+          ...(options.fetchAsString && {
+            fetchAsString: options.fetchAsString,
+          }),
         },
       },
     );

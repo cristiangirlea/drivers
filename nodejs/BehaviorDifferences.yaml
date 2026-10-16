@@ -2256,3 +2256,56 @@ behavior_differences:
       `cancel()` does not change that result.
     status_rationale: |
       Cancel is non-blocking, as in ODBC SQLCancel. The abort response is not part of cancel().
+
+  122:
+    name: 'timeout has seconds granularity, no default, and accepts 0 and negative values'
+    status: unknown
+    type: unknown
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      1. timeout is milliseconds and is honored exactly, including fractions.
+      2. It defaults to 90000.
+      3. 0, negative, and non-integer values are rejected in createConnection.
+      It applies to every request the driver sends, including login and query requests, and each
+      retry attempt gets a fresh timeout.
+    new_driver_behavior: |
+      1. timeout is accepted in milliseconds and rounded down to whole seconds; a positive value
+         under 1000 becomes 1 second, so 1500 waits 1 second.
+      2. Omitted, login attempts time out after 30 seconds and other requests have no per-request
+         timeout.
+      3. 0 and negative values behave like an omitted timeout. A non-numeric value fails with
+         "Expected type Int for parameter 'timeout'".
+      It applies to each attempt of login, query, and other requests.
+
+  123:
+    name: 'CRL configure() options are read when a connection is created, with seconds granularity and a different default cache directory'
+    status: unknown
+    type: unknown
+    reviewed: false
+    is_breaking_change: false
+    impact: low
+    old_driver_behavior: |
+      snowflake.configure() accepts crlDownloadTimeout (ms, default 10000), crlDownloadMaxSize
+      (bytes, default 20971520), crlCacheValidityTime (ms, default 86400000), and crlCacheDir.
+      1. Values are read at every CRL download or cache access, so a later configure() call also
+         affects connections that already exist.
+      2. Milliseconds are honored exactly. crlDownloadTimeout 0 means the download has no timeout.
+      3. crlCacheDir defaults to SNOWFLAKE_CRL_ON_DISK_CACHE_DIR, read at each access, otherwise
+         ~/Library/Caches/Snowflake/crls on macOS, ~/.cache/snowflake/crls on Linux, and
+         %USERPROFILE%/AppData/Local/Snowflake/Caches/crls on Windows.
+      4. None of these options is accepted as a connection option.
+    new_driver_behavior: |
+      snowflake.configure() accepts the same four options with the same units and defaults.
+      1. Values are read when a connection is created, so a later configure() call only affects
+         new connections.
+      2. crlDownloadTimeout and crlCacheValidityTime are rounded down to whole seconds; a positive
+         value under 1000 becomes 1 second. crlDownloadTimeout 0 makes every CRL download time out
+         immediately instead of disabling the timeout.
+      3. crlCacheDir defaults to SNOWFLAKE_CRL_ON_DISK_CACHE_DIR, read once when the driver is
+         loaded, otherwise ~/Library/Caches/snowflake/crls on macOS, $XDG_CACHE_HOME/snowflake/crls
+         or ~/.cache/snowflake/crls on Linux, and %LOCALAPPDATA%\snowflake\crls on Windows. CRLs
+         cached by the old driver are not reused.
+      4. All four options are also accepted as connection options, where they override the
+         configure() value for that connection.
