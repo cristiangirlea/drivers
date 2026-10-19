@@ -286,6 +286,103 @@ public class SnowflakeStatementImplTest {
   }
 
   @Test
+  void executeLargeBatchReturnsExactLongCountsForEachAddedSql() throws Exception {
+    Statement stmt = createStatement();
+    when(mockCoreApi.statementExecuteQuery(any(), isNull()))
+        .thenReturn(insertResponse(1L), insertResponse(2L), insertResponse(3L));
+
+    stmt.addBatch("INSERT INTO t VALUES (1)");
+    stmt.addBatch("INSERT INTO t VALUES (2), (3)");
+    stmt.addBatch("INSERT INTO t VALUES (4), (5), (6)");
+
+    long[] counts = stmt.executeLargeBatch();
+
+    assertArrayEquals(new long[] {1L, 2L, 3L}, counts);
+    verify(mockCoreApi, times(3)).statementExecuteQuery(any(), isNull());
+    assertNull(stmt.getResultSet());
+    assertEquals(-1, stmt.getUpdateCount());
+    assertEquals(0, stmt.executeLargeBatch().length, "batch is cleared after a successful call");
+  }
+
+  @Test
+  void executeLargeBatchPreservesCountAboveIntegerMaxWhileExecuteBatchNarrows() throws Exception {
+    Statement stmt = createStatement();
+    long largeCount = (long) Integer.MAX_VALUE + 1L;
+    when(mockCoreApi.statementExecuteQuery(any(), isNull()))
+        .thenReturn(insertResponse(largeCount), insertResponse(Integer.MAX_VALUE));
+
+    stmt.addBatch("INSERT INTO t SELECT * FROM big");
+    stmt.addBatch("INSERT INTO t SELECT * FROM max_int");
+
+    long[] largeCounts = stmt.executeLargeBatch();
+    assertArrayEquals(
+        new long[] {largeCount, Integer.MAX_VALUE},
+        largeCounts,
+        "executeLargeBatch keeps counts above Integer.MAX_VALUE; Integer.MAX_VALUE itself is unchanged");
+
+    stmt.addBatch("INSERT INTO t SELECT * FROM big");
+    stmt.addBatch("INSERT INTO t SELECT * FROM max_int");
+    when(mockCoreApi.statementExecuteQuery(any(), isNull()))
+        .thenReturn(insertResponse(largeCount), insertResponse(Integer.MAX_VALUE));
+
+    int[] intCounts = stmt.executeBatch();
+    assertArrayEquals(
+        new int[] {Statement.SUCCESS_NO_INFO, Integer.MAX_VALUE},
+        intCounts,
+        "executeBatch still maps overflow to SUCCESS_NO_INFO");
+  }
+
+  @Test
+  void executeLargeBatchContinuesAfterFailureAndPreservesLargeCounts() throws Exception {
+    Statement stmt = createDecoratedStatement();
+    long largeCount = (long) Integer.MAX_VALUE + 1L;
+    when(mockCoreApi.statementExecuteQuery(any(), isNull()))
+        .thenReturn(insertResponse(largeCount, "qid-ok-1"))
+        .thenThrow(
+            new CoreException(
+                DriverException.newBuilder()
+                    .setMessage("boom")
+                    .setSqlState("42000")
+                    .setVendorCode(1234)
+                    .build(),
+                null))
+        .thenReturn(insertResponse(3L, "qid-ok-3"));
+
+    stmt.addBatch("INSERT INTO t SELECT * FROM big");
+    stmt.addBatch("INSERT INTO t VALUES (2)");
+    stmt.addBatch("INSERT INTO t VALUES (3), (4), (5)");
+
+    BatchUpdateException ex = assertThrows(BatchUpdateException.class, stmt::executeLargeBatch);
+    assertArrayEquals(
+        new long[] {largeCount, Statement.EXECUTE_FAILED, 3L},
+        ex.getLargeUpdateCounts(),
+        "failed slot is EXECUTE_FAILED; surrounding counts keep full long fidelity");
+    assertEquals("42000", ex.getSQLState());
+    assertEquals(1234, ex.getErrorCode());
+
+    java.util.List<String> ids =
+        ((net.snowflake.client.api.statement.SnowflakeStatement) stmt).getBatchQueryIDs();
+    assertArrayEquals(
+        new String[] {"qid-ok-1", null, "qid-ok-3"},
+        ids.toArray(new String[0]),
+        "batchQueryIds positionally aligns with large update counts; failed slot is null");
+
+    assertNull(stmt.getResultSet());
+    assertEquals(-1, stmt.getUpdateCount());
+    assertEquals(0, stmt.executeLargeBatch().length, "batch is cleared even after a failed call");
+  }
+
+  @Test
+  void executeLargeBatchOnEmptyBatchReturnsEmptyArrayAndSkipsRpc() throws Exception {
+    Statement stmt = createStatement();
+
+    long[] counts = stmt.executeLargeBatch();
+
+    assertEquals(0, counts.length);
+    verify(mockCoreApi, times(0)).statementExecuteQuery(any(), isNull());
+  }
+
+  @Test
   void getQueryIdIsNullOnFreshStatement() throws Exception {
     Statement stmt = createStatement();
     assertNull(((SnowflakeStatement) stmt).getQueryID());

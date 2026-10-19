@@ -43,8 +43,7 @@ behavior_differences:
     status_rationale: |
       Sequential executeBatch, count above Integer.MAX_VALUE: the old driver throws
       BatchUpdateException (vendor 200058); the new driver returns SUCCESS_NO_INFO (-2).
-      Array bind does not throw on either driver. Statement.executeLargeBatch() works on
-      the old driver and is unimplemented on the new driver.
+      Array bind does not throw on either driver.
   3:
     name: "getBatchQueryIDs positional alignment with updateCounts"
     status: unknown

@@ -511,6 +511,12 @@ public class SnowflakeStatementImpl implements InternalStatement, DelegatingWrap
   @Override
   public int[] executeBatch() {
     checkClosed();
+    return batch.executeAllAsInt(this);
+  }
+
+  @Override
+  public long[] executeLargeBatch() {
+    checkClosed();
     return batch.executeAll(this);
   }
 
@@ -518,6 +524,15 @@ public class SnowflakeStatementImpl implements InternalStatement, DelegatingWrap
       CoreException firstFailure, int[] updateCounts) {
     // Decompose the DriverException the same way SnowflakeSQLException does (null/0 when absent,
     // e.g. transport failures) so the BatchUpdateException keeps the core's SQLState / vendor code.
+    DriverException error = firstFailure.getError();
+    String sqlState = (error != null && error.hasSqlState()) ? error.getSqlState() : null;
+    int vendorCode = (error != null && error.hasVendorCode()) ? error.getVendorCode() : 0;
+    return new SFBatchUpdateException(
+        firstFailure.getLocalizedMessage(), sqlState, vendorCode, updateCounts, firstFailure);
+  }
+
+  protected static SFBatchUpdateException buildBatchFailureException(
+      CoreException firstFailure, long[] updateCounts) {
     DriverException error = firstFailure.getError();
     String sqlState = (error != null && error.hasSqlState()) ? error.getSqlState() : null;
     int vendorCode = (error != null && error.hasVendorCode()) ? error.getVendorCode() : 0;

@@ -3,8 +3,11 @@ package net.snowflake.client.api.statement;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.sql.BatchUpdateException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -14,8 +17,8 @@ import net.snowflake.jdbc.utils.SnowflakeIntegrationTestBase;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end coverage for {@code addBatch} / {@code executeBatch} on Statement and
- * PreparedStatement.
+ * End-to-end coverage for {@code addBatch}, {@code executeBatch}, and {@code executeLargeBatch} on
+ * Statement and PreparedStatement.
  */
 public class SnowflakeBatchExecutionTest extends SnowflakeIntegrationTestBase {
 
@@ -59,6 +62,70 @@ public class SnowflakeBatchExecutionTest extends SnowflakeIntegrationTestBase {
         ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + tableName)) {
       assertTrue(rs.next());
       assertEquals(0, rs.getInt(1));
+    }
+  }
+
+  @Test
+  public void testStatementExecuteLargeBatchReturnsPerStatementCounts() throws Exception {
+    Connection conn = getDefaultConnection();
+    String tableName = createTempTable(conn, "ud_stmt_large_batch_", "v INTEGER");
+
+    try (Statement stmt = conn.createStatement()) {
+      stmt.addBatch("INSERT INTO " + tableName + " VALUES (1)");
+      stmt.addBatch("INSERT INTO " + tableName + " VALUES (2), (3)");
+      stmt.addBatch("INSERT INTO " + tableName + " VALUES (4), (5), (6)");
+
+      long[] counts = stmt.executeLargeBatch();
+      assertArrayEquals(new long[] {1L, 2L, 3L}, counts);
+      assertNull(stmt.getResultSet());
+    }
+
+    try (Statement stmt = conn.createStatement();
+        ResultSet rs = stmt.executeQuery("SELECT COUNT(*), SUM(v) FROM " + tableName)) {
+      assertTrue(rs.next());
+      assertEquals(6, rs.getInt(1));
+      assertEquals(21, rs.getInt(2));
+    }
+  }
+
+  @Test
+  public void testStatementExecuteLargeBatchOnEmptyBatchReturnsNoCounts() throws Exception {
+    Connection conn = getDefaultConnection();
+    String tableName = createTempTable(conn, "ud_stmt_large_empty_", "v INTEGER");
+
+    try (Statement stmt = conn.createStatement()) {
+      long[] counts = stmt.executeLargeBatch();
+      assertEquals(0, counts.length);
+    }
+
+    try (Statement stmt = conn.createStatement();
+        ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + tableName)) {
+      assertTrue(rs.next());
+      assertEquals(0, rs.getInt(1));
+    }
+  }
+
+  @Test
+  public void testStatementExecuteLargeBatchContinuesAfterMiddleFailure() throws Exception {
+    Connection conn = getDefaultConnection();
+    String tableName = createTempTable(conn, "ud_stmt_large_fail_", "v INTEGER");
+
+    try (Statement stmt = conn.createStatement()) {
+      stmt.addBatch("INSERT INTO " + tableName + " VALUES (1)");
+      stmt.addBatch("SELCT INVALID SYNTAX");
+      stmt.addBatch("INSERT INTO " + tableName + " VALUES (4), (5), (6)");
+
+      BatchUpdateException ex = assertThrows(BatchUpdateException.class, stmt::executeLargeBatch);
+      assertArrayEquals(new long[] {1L, Statement.EXECUTE_FAILED, 3L}, ex.getLargeUpdateCounts());
+      assertEquals("42000", ex.getSQLState());
+      assertEquals(1003, ex.getErrorCode());
+    }
+
+    try (Statement stmt = conn.createStatement();
+        ResultSet rs = stmt.executeQuery("SELECT COUNT(*), SUM(v) FROM " + tableName)) {
+      assertTrue(rs.next());
+      assertEquals(4, rs.getInt(1));
+      assertEquals(16, rs.getInt(2));
     }
   }
 
