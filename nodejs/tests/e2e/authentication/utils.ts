@@ -18,7 +18,7 @@ import {
   snowflake,
 } from '../utils/index.js';
 
-const execFileAsync = promisify(execFile);
+export const execFileAsync = promisify(execFile);
 const OKTA_USER_KEY = 'SNOWFLAKE_TEST_OKTA_USER';
 const OKTA_PASSWORD_KEY = 'SNOWFLAKE_TEST_OKTA_PASSWORD';
 const MFA_USER_KEY = 'SNOWFLAKE_TEST_MFA_USER';
@@ -263,6 +263,30 @@ export async function cleanBrowserProcesses(): Promise<void> {
   await execFileAsync('node', ['/externalbrowser/cleanBrowserProcesses.js'], {
     timeout: 15_000,
   });
+}
+
+export async function provideBrowserCredentials(...scriptArgs: string[]): Promise<void> {
+  await waitForChromium();
+  await execFileAsync('node', ['/externalbrowser/provideBrowserCredentials.js', ...scriptArgs], {
+    timeout: 90_000,
+  });
+}
+
+export async function connectWithBrowserAutomation(
+  connect: () => Promise<unknown>,
+  provideCredentials: () => Promise<void>,
+): Promise<void> {
+  const [connectResult, browserResult] = await Promise.allSettled([
+    connect(),
+    provideCredentials(),
+  ]);
+  onTestFinished(cleanBrowserProcesses);
+  if (connectResult.status === 'rejected') {
+    throw connectResult.reason;
+  }
+  if (browserResult.status === 'rejected') {
+    throw browserResult.reason;
+  }
 }
 
 export function destroyConnectionAfterTest(connection: Connection): void {

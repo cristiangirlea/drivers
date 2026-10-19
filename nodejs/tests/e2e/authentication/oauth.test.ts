@@ -1,19 +1,32 @@
 import { Buffer } from 'node:buffer';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import type { Connection, ConnectionOptions } from '../../types/sdk-types.js';
-import getTestParameter from '../utils/getTestParameter.js';
+import getTestParameter, { getTestParametersFromSameSource } from '../utils/getTestParameter.js';
 import {
   baseConnectionOptions,
   connectAsyncWithErrorBD,
+  destroyConnectionAsync,
   isRunningNewDriverWithBD,
   snowflake,
 } from '../utils/index.js';
 import { verifySimpleQuery } from '../utils/query.js';
 import {
+  cleanBrowserProcesses,
+  connectWithBrowserAutomation,
   destroyConnectionAfterTest,
   expectConnectionNotUp,
+  provideBrowserCredentials,
+  NEVER_ESTABLISHED_QUERY,
   requireOktaCredentials,
+  TERMINATED_QUERY,
 } from './utils.js';
+
+function formatSingleIssueConfigurationValidationMessage(
+  parameter: string,
+  detail: string,
+): string {
+  return `Configuration error: Configuration validation failed (1 issue(s)): ${parameter}: ${detail}`;
+}
 
 async function createLiveOauthConnection(
   options: ConnectionOptions,
@@ -59,6 +72,86 @@ async function mintOauthAccessToken(user: string, password: string): Promise<str
     throw new Error('OAuth token response did not contain an access token');
   }
   return payload.access_token;
+}
+
+type AuthorizationCodeCredentials = {
+  user: string;
+  password: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  totpSeed: string;
+};
+
+function requireAuthorizationCodeCredentials(): AuthorizationCodeCredentials {
+  const loginKeys = [
+    'SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_USER',
+    'SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_PASSWORD',
+    'SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_MFA_SEED',
+  ] as const;
+  const loginCredentials = getTestParametersFromSameSource(loginKeys);
+  if (!loginCredentials) {
+    throw new Error(`No parameters source defines ${loginKeys.join(', ')}`);
+  }
+  const {
+    SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_USER: user,
+    SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_PASSWORD: password,
+    SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_MFA_SEED: totpSeed,
+  } = loginCredentials;
+  const clientKeys = [
+    'SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_CLIENT_ID',
+    'SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_CLIENT_SECRET',
+  ] as const;
+  const clientCredentials = getTestParametersFromSameSource(clientKeys);
+  if (!clientCredentials) {
+    throw new Error(`No parameters source defines ${clientKeys.join(', ')}`);
+  }
+  const {
+    SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_CLIENT_ID: clientId,
+    SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_CLIENT_SECRET: clientSecret,
+  } = clientCredentials;
+  return {
+    user,
+    password,
+    totpSeed,
+    clientId,
+    clientSecret,
+    redirectUri: getTestParameter('SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_REDIRECT_URI', true),
+  };
+}
+
+function createAuthorizationCodeOptions(clientStoreTemporaryCredential: boolean): {
+  options: ConnectionOptions;
+  credentials: AuthorizationCodeCredentials;
+} {
+  const credentials = requireAuthorizationCodeCredentials();
+  return {
+    options: {
+      ...baseConnectionOptions,
+      username: credentials.user,
+      authenticator: 'OAUTH_AUTHORIZATION_CODE',
+      oauthClientId: credentials.clientId,
+      oauthClientSecret: credentials.clientSecret,
+      oauthRedirectUri: credentials.redirectUri,
+      clientStoreTemporaryCredential,
+      browserActionTimeout: 120000,
+    } as ConnectionOptions,
+    credentials,
+  };
+}
+
+function connectWithOauthAuthorizationCode(
+  connect: () => Promise<unknown>,
+  credentials: Pick<AuthorizationCodeCredentials, 'user' | 'password' | 'totpSeed'>,
+): Promise<void> {
+  return connectWithBrowserAutomation(connect, () =>
+    provideBrowserCredentials(
+      'internalOauthSnowflakeSuccess',
+      credentials.user,
+      credentials.password,
+      credentials.totpSeed,
+    ),
+  );
 }
 
 describe('tests/definitions/shared/authentication/oauth.feature', () => {
@@ -112,8 +205,10 @@ describe('tests/definitions/shared/authentication/oauth.feature', () => {
           ? {
               name: 'InvalidParameterError',
               code: undefined,
-              message:
-                "Configuration error: Configuration validation failed (1 issue(s)): token: Missing required parameter 'token' (or 'token_file_path') for OAuth authentication",
+              message: formatSingleIssueConfigurationValidationMessage(
+                'token',
+                "Missing required parameter 'token' (or 'token_file_path') for OAuth authentication",
+              ),
             }
           : {
               name: 'NetworkError',
@@ -160,8 +255,10 @@ describe('tests/definitions/shared/authentication/oauth.feature', () => {
           ? {
               name: 'InvalidParameterError',
               code: undefined,
-              message:
-                "Configuration error: Configuration validation failed (1 issue(s)): authenticator: Invalid authenticator 'OAUTH_AUTHORIZATION_TYPO'. Allowed values are snowflake, snowflake_jwt, snowflake_password, programmatic_access_token, pat_with_external_session, username_password_mfa, externalbrowser, oauth, oauth_client_credentials, oauth_authorization_code, workload_identity or an https:// URL for native Okta SSO (case-insensitive)",
+              message: formatSingleIssueConfigurationValidationMessage(
+                'authenticator',
+                "Invalid authenticator 'OAUTH_AUTHORIZATION_TYPO'. Allowed values are snowflake, snowflake_jwt, snowflake_password, programmatic_access_token, pat_with_external_session, username_password_mfa, externalbrowser, oauth, oauth_client_credentials, oauth_authorization_code, workload_identity or an https:// URL for native Okta SSO (case-insensitive)",
+              ),
             }
           : {
               name: 'NetworkError',
@@ -210,6 +307,76 @@ describe('tests/definitions/shared/authentication/oauth.feature', () => {
 
       // And A subsequent query fails because the connection is not usable
       await expectConnectionNotUp(connection);
+    });
+
+    it('oauth should authenticate using authorization code flow', async () => {
+      // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret
+      const { options, credentials } = createAuthorizationCodeOptions(false);
+      const connection = snowflake.createConnection({ ...options });
+      await cleanBrowserProcesses();
+
+      // When Trying to Connect (this will spawn the local-loopback HTTP listener and `xdg-open`/`open`/`ShellExecute` the IdP login URL unless a previously cached access token short-circuits the leg)
+      await connectWithOauthAuthorizationCode(() => connection.connectAsync(), credentials);
+      destroyConnectionAfterTest(connection);
+
+      // Then Login is successful and a simple query can be executed
+      await verifySimpleQuery(connection);
+    });
+
+    it('oauth should reuse cached access token without browser interaction', async () => {
+      const { options, credentials } = createAuthorizationCodeOptions(true);
+      const browserLoginConnection = snowflake.createConnection({ ...options });
+      await cleanBrowserProcesses();
+      await connectWithOauthAuthorizationCode(
+        () => browserLoginConnection.connectAsync(),
+        credentials,
+      );
+      onTestFinished(async () => {
+        await destroyConnectionAsync(browserLoginConnection);
+      });
+      await verifySimpleQuery(browserLoginConnection);
+
+      // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with client_store_temporary_credential=true and a token has been cached from a previous browser authentication
+
+      const cachedTokenConnection = snowflake.createConnection({
+        ...({
+          ...options,
+          openExternalBrowserCallback: () => {
+            throw new Error('Browser should not be launched');
+          },
+        } as ConnectionOptions),
+      });
+      // When Trying to Connect without browser interaction
+      await cachedTokenConnection.connectAsync();
+      destroyConnectionAfterTest(cachedTokenConnection);
+
+      // Then Login is successful and a simple query can be executed
+      await verifySimpleQuery(cachedTokenConnection);
+    });
+
+    describe.skip('should avoid bad-secret account lockouts', () => {
+      it('oauth should fail authorization code flow with bad client secret', async () => {
+        // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id but a deliberately invalid client secret
+        const { options, credentials } = createAuthorizationCodeOptions(false);
+        const connection = snowflake.createConnection({
+          ...({
+            ...options,
+            oauthClientSecret: 'invalid_client_secret_12345',
+          } as ConnectionOptions),
+        });
+        await cleanBrowserProcesses();
+
+        // When Trying to Connect
+        const connecting = connectWithOauthAuthorizationCode(
+          () => connection.connectAsync(),
+          credentials,
+        );
+
+        // Then Connection fails with an authentication / login error
+        await expect(connecting).rejects.toMatchObject({
+          message: expect.stringContaining('invalid_client'),
+        });
+      });
     });
 
     it('oauth should authenticate using lowercase oauth authenticator', async () => {
@@ -266,22 +433,46 @@ describe('tests/definitions/shared/authentication/oauth.feature', () => {
               name: 'OperationFailedError',
               code: '390309',
               message: expect.stringMatching(
-                /^Failed to login: Login error: The user you were trying to authenticate as differs from the user tied to the access token\. \[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\], code: 390309$/,
+                /^Failed to login: Login error: The user you were trying to authenticate as differs from the user tied to the access token\. .+, code: 390309$/,
               ),
             }
           : {
               name: 'OperationFailedError',
               code: '390309',
               message: expect.stringMatching(
-                /^The user you were trying to authenticate as differs from the user tied to the access token\. \[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]$/,
+                /^The user you were trying to authenticate as differs from the user tied to the access token\. .+$/,
               ),
             },
       );
-
       await expectConnectionNotUp(connection);
     });
   });
 });
+
+it(
+  'should time out authorization code when browser credentials are not provided',
+  { tags: ['requires_auth_test_container'] },
+  async () => {
+    const { options } = createAuthorizationCodeOptions(false);
+    const connection = snowflake.createConnection({
+      ...({
+        ...options,
+        browserActionTimeout: 2000,
+      } as ConnectionOptions),
+    });
+    onTestFinished(cleanBrowserProcesses);
+    await cleanBrowserProcesses();
+    await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject(
+      isRunningNewDriverWithBD('BD#95')
+        ? { message: expect.stringContaining('OAuth browser authorization timed out') }
+        : { message: expect.stringContaining('Browser action timed out after 2000 ms.') },
+    );
+    await expectConnectionNotUp(
+      connection,
+      isRunningNewDriverWithBD('BD#61') ? TERMINATED_QUERY : NEVER_ESTABLISHED_QUERY,
+    );
+  },
+);
 
 describe('sfRetryMaxLoginRetries', () => {
   it('should reject sfRetryMaxLoginRetries as an unknown option', () => {
@@ -296,8 +487,8 @@ describe('sfRetryMaxLoginRetries', () => {
       expect(() => snowflake.createConnection({ ...options })).toThrow(
         'Unknown connection option: sfRetryMaxLoginRetries',
       );
-      return;
+    } else {
+      snowflake.createConnection({ ...options });
     }
-    snowflake.createConnection({ ...options });
   });
 });

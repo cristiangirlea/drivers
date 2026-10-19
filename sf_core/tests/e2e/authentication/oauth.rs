@@ -99,15 +99,7 @@ fn oauth_should_fail_legacy_authentication_with_invalid_token() {
 #[test]
 #[ignore = "OAuth E2E: AC flow needs a real browser leg unless an OAuth access token is already cached in the keyring (run with --features auth_oauth_e2e)"]
 fn oauth_should_authenticate_using_authorization_code_flow() {
-    // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a
-    //       valid client id / secret. `oauth_authorization_url` and
-    //       `oauth_token_request_url` are forwarded from parameters
-    //       when present (otherwise the driver falls back to the
-    //       Snowflake-IdP defaults `https://{host}/oauth/authorize`
-    //       and `https://{host}/oauth/token-request`).
-    //       `client_store_temporary_credential=true` lets the AC flow
-    //       short-circuit on subsequent runs by re-using the cached
-    //       access / refresh token (AC state machine: cache → refresh → interactive).
+    // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret
     let client = SnowflakeTestClient::with_default_params();
     let client_id = client
         .parameters
@@ -298,11 +290,8 @@ fn oauth_should_authenticate_using_client_credentials_flow() {
 #[test]
 #[ignore = "OAuth E2E: AC negative path with a bad client secret (run with --features auth_oauth_e2e)"]
 fn oauth_should_fail_authorization_code_flow_with_bad_client_secret() {
-    // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a
-    //       valid client id but a deliberately invalid client secret.
-    //       The IdP token-exchange step must reject the credentials
-    //       and the driver must surface an authentication / login
-    //       error.
+    // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id but a
+    // deliberately invalid client secret
     let client = SnowflakeTestClient::with_default_params();
     let client_id = client
         .parameters

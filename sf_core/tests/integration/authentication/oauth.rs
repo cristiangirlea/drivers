@@ -56,9 +56,9 @@ use wiremock::MockServer;
 /// On `Drop` the fixture removes every token type it could conceivably
 /// have seeded, scoped to the unique username — avoids cross-test
 /// pollution if a test panics before its explicit teardown.
-struct OAuthTestFixture {
-    mock: MockServerWithTls,
-    client: SnowflakeTestClient,
+pub(crate) struct OAuthTestFixture {
+    pub(crate) mock: MockServerWithTls,
+    pub(crate) client: SnowflakeTestClient,
     cache: KeyringTokenCache,
     /// Normalized IdP token-endpoint URL for cache key construction.
     idp_url: String,
@@ -72,7 +72,7 @@ impl OAuthTestFixture {
     /// The wiremock server hosts both the IdP token endpoint
     /// (`/oauth/token-request`) and the Snowflake login endpoint
     /// (`/session/v1/login-request`).
-    fn with_authorization_code(user: &str) -> Self {
+    pub(crate) fn with_authorization_code(user: &str) -> Self {
         let mock = MockServerWithTls::start();
         let token_url = format!("{}/oauth/token-request", mock.http_url());
         let auth_url = format!("{}/oauth/authorize", mock.http_url());
@@ -130,7 +130,7 @@ impl OAuthTestFixture {
 
     /// Build a fixture configured for the legacy pre-acquired token
     /// flow (`AUTHENTICATOR=OAUTH` + raw `token=`).
-    fn with_legacy_oauth(user: &str, token: &str) -> Self {
+    pub(crate) fn with_legacy_oauth(user: &str, token: &str) -> Self {
         let mock = MockServerWithTls::start();
 
         let client = SnowflakeTestClient::with_int_tests_params(Some(&mock.http_url()));
@@ -173,7 +173,7 @@ impl OAuthTestFixture {
         }
     }
 
-    fn seed_access_token(&self, value: &str) {
+    pub(crate) fn seed_access_token(&self, value: &str) {
         self.cache
             .add_token(&self.cache_key(TokenType::OAuthAccessToken), value)
             .expect("seed OAuth access token");
@@ -197,7 +197,7 @@ impl OAuthTestFixture {
             .expect("get OAuth refresh token")
     }
 
-    fn connect(&self) -> Result<(), String> {
+    pub(crate) fn connect(&self) -> Result<(), String> {
         self.client.connect()
     }
 
@@ -234,7 +234,7 @@ impl Drop for OAuthTestFixture {
 /// Build a unique username scoped to the running test, so concurrent
 /// runs of the suite do not race on the OS keyring (mirrors the
 /// uniqueness convention in `user_password_mfa_token_cache.rs`).
-fn unique_user(prefix: &str) -> String {
+pub(crate) fn unique_user(prefix: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -242,7 +242,7 @@ fn unique_user(prefix: &str) -> String {
     format!("{prefix}_{nanos}")
 }
 
-fn count_token_endpoint_requests(mock: &MockServerWithTls) -> usize {
+pub(crate) fn count_token_endpoint_requests(mock: &MockServerWithTls) -> usize {
     mock.received_requests()
         .iter()
         .filter(|r| r.url.path() == "/oauth/token-request" && r.method.as_str() == "POST")
@@ -260,7 +260,6 @@ fn token_endpoint_bodies(mock: &MockServerWithTls) -> Vec<String> {
 // =============================================================================
 // Legacy `AUTHENTICATOR=OAUTH` + raw `token=`
 // =============================================================================
-
 #[test]
 fn should_login_with_legacy_oauth_using_pre_acquired_token() {
     // Given Wiremock is running and a fixture is configured with the

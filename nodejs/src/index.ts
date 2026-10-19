@@ -327,6 +327,26 @@ export type ConnectionOptions = Record<string, unknown> & {
    */
   passcodeInPassword?: boolean;
   /**
+   * Value of `client id` provided by the identity provider for Snowflake integration.
+   */
+  oauthClientId?: string;
+  /**
+   * Value of the `client secret` provided by the identity provider for Snowflake integration.
+   */
+  oauthClientSecret?: string;
+  /**
+   * Redirect URI registered with the identity provider for the authorization-code flow.
+   */
+  oauthRedirectUri?: string;
+  /**
+   * Identity Provider endpoint that starts the authorization-code flow.
+   */
+  oauthAuthorizationUrl?: string;
+  /**
+   * Identity Provider endpoint supplying the access tokens to the driver.
+   */
+  oauthTokenRequestUrl?: string;
+  /**
    * Replaces the system-browser launch used by `EXTERNALBROWSER` SSO and
    * `OAUTH_AUTHORIZATION_CODE`. The driver still binds the loopback
    * listener and waits for the IdP redirect; this function only receives

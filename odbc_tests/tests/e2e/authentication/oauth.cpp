@@ -196,11 +196,7 @@ TEST_CASE("oauth should authenticate using authorization code flow",
       get_param_required<std::string>(params, "SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_REDIRECT_URI");
   const std::string totp_seed = get_param_required<std::string>(params, "SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_MFA_SEED");
 
-  // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret. `oauth_authorization_url`
-  // and `oauth_token_request_url` are forwarded from parameters when present (otherwise the driver falls back to the
-  // Snowflake-IdP defaults `https://{host}/oauth/authorize` and `https://{host}/oauth/token-request`).
-  // `client_store_temporary_credential=true` lets the AC flow short-circuit on subsequent runs by re-using the cached
-  // access / refresh token (AC state machine: cache → refresh → interactive).
+  // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret
   std::stringstream ss;
   ss << get_oauth_base_connection_string(params, "OAUTH_AUTHORIZATION_CODE", user);
   ss << "OAUTH_CLIENT_ID=" << client_id << ";";
@@ -292,10 +288,8 @@ TEST_CASE("oauth should fail authorization code flow with bad client secret",
       get_param_required<std::string>(params, "SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_REDIRECT_URI");
   const std::string totp_seed = get_param_required<std::string>(params, "SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_MFA_SEED");
 
-  // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a
-  //       valid client id but a deliberately invalid client secret.
-  //       The IdP token-exchange step must reject the credentials
-  //       and the driver must surface an authentication / login error.
+  // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id but a deliberately invalid client
+  // secret
   std::stringstream ss;
   ss << get_oauth_base_connection_string(params, "OAUTH_AUTHORIZATION_CODE", user);
   ss << "OAUTH_CLIENT_ID=" << client_id << ";";

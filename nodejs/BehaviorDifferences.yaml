@@ -1850,6 +1850,21 @@ behavior_differences:
       The default store is initialized on first use rather than at connect, so its failure is
       handled like any other best-effort cache failure.
 
+  95:
+    name: 'OAuth authorization-code loopback timeout error wording'
+    status: allowed
+    type: api_incompatibility
+    reviewed: false
+    is_breaking_change: false
+    impact: low
+    old_driver_behavior: |
+      When the authorization-code loopback wait expires, the error is
+      `Browser action timed out after {n} ms.` with n the browserActionTimeout value in milliseconds.
+    new_driver_behavior: |
+      The same wait reports `OAuth browser authorization timed out` when the loopback listener
+      expires while the authentication budget is still remaining. If the whole-flow budget is
+      already gone, the message is `Authentication timeout exceeded (budget {n}s)` instead.
+
   97:
     name: 'A refused OAuth connect is NetworkError 401001 with the catalog message'
     status: unknown

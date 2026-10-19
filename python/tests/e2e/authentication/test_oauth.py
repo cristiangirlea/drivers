@@ -160,12 +160,7 @@ class TestOAuthAuthorizationCode:
     def test_oauth_should_authenticate_using_authorization_code_flow(
         self, connection_factory, authorization_code_params
     ):
-        # Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret.
-        #       `oauth_authorization_url` and `oauth_token_request_url` are forwarded from parameters
-        #       when present (otherwise the driver falls back to the Snowflake-IdP defaults
-        #       `https://{host}/oauth/authorize` and `https://{host}/oauth/token-request`).
-        #       `client_store_temporary_credential=true` lets the AC flow short-circuit on subsequent
-        #       runs by re-using the cached access / refresh token (AC state machine: cache → refresh → interactive).
+        # Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret
         connect_params = {
             "authenticator": "OAUTH_AUTHORIZATION_CODE",
             "user": authorization_code_params["user"],
@@ -227,8 +222,7 @@ class TestOAuthAuthorizationCode:
         self, connection_factory, authorization_code_params
     ):
         # Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id but a
-        #       deliberately invalid client secret. The IdP token-exchange step must reject the
-        #       credentials and the driver must surface an authentication / login error.
+        # deliberately invalid client secret
         connect_params = {
             "authenticator": "OAUTH_AUTHORIZATION_CODE",
             "user": authorization_code_params["user"],

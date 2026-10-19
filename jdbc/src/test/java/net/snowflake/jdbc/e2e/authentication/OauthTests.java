@@ -119,13 +119,7 @@ class OauthTests implements WithQueryUtils, WithConnect, WithOauthAccessToken {
 
     @Test
     void oauthShouldAuthenticateUsingAuthorizationCodeFlow() throws Exception {
-      // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret.
-      // `oauth_authorization_url` and `oauth_token_request_url` are forwarded from parameters when
-      // present (otherwise the driver falls back to the Snowflake-IdP defaults
-      // `https://{host}/oauth/authorize` and `https://{host}/oauth/token-request`).
-      // `client_store_temporary_credential=true` lets the AC flow short-circuit on subsequent runs
-      // by re-using the cached access / refresh token (AC state machine: cache → refresh →
-      // interactive).
+      // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret
       Properties props = loadDefaultConnectionProperties();
       props.setProperty("authenticator", "OAUTH_AUTHORIZATION_CODE");
       props.setProperty("user", USER);
@@ -188,8 +182,7 @@ class OauthTests implements WithQueryUtils, WithConnect, WithOauthAccessToken {
     @Disabled("Bad-secret tests cause pipeline flakiness by blocking the test account")
     void oauthShouldFailAuthorizationCodeFlowWithBadClientSecret() {
       // Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id but a
-      // deliberately invalid client secret. The IdP token-exchange step must reject the credentials
-      // and the driver must surface an authentication / login error.
+      // deliberately invalid client secret
       Properties props = loadDefaultConnectionProperties();
       props.setProperty("authenticator", "OAUTH_AUTHORIZATION_CODE");
       props.setProperty("user", USER);

@@ -1,16 +1,4 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  onTestFinished,
-  vi,
-} from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Connection, ConnectionOptions } from '../../types/sdk-types.js';
 import ErrorCode from '../../../src/constants/ErrorCode.js';
 import { TempDir } from '../utils/files.js';
@@ -33,47 +21,25 @@ import {
   NEVER_ESTABLISHED_QUERY,
   TERMINATED_QUERY,
   cleanBrowserProcesses,
+  connectWithBrowserAutomation,
   deliverBrowserCallbackAfter,
   patchOldDriverHttpsProtocol,
+  provideBrowserCredentials,
   requireOktaCredentials,
-  waitForChromium,
 } from './utils.js';
-
-const execFileAsync = promisify(execFile);
-
-async function provideBrowserCredentials(
-  mode: 'success' | 'fail',
-  user: string,
-  password: string,
-): Promise<void> {
-  await waitForChromium();
-  await execFileAsync(
-    'node',
-    ['/externalbrowser/provideBrowserCredentials.js', mode, user, password],
-    { timeout: 90_000 },
-  );
-}
 
 function submitRejectedIdpCredentials(): Promise<void> {
   return provideBrowserCredentials('fail', 'itsnotanaccount.com', 'fakepassword');
 }
 
-async function connectWithBrowserAutomation(
+function connectWithExternalBrowser(
   connect: () => Promise<unknown>,
   user: string,
   password: string,
 ): Promise<void> {
-  const [connectionAttempt, provideCredentialsPromise] = await Promise.allSettled([
-    connect(),
+  return connectWithBrowserAutomation(connect, () =>
     provideBrowserCredentials('success', user, password),
-  ]);
-  onTestFinished(cleanBrowserProcesses);
-  if (connectionAttempt.status === 'rejected') {
-    throw connectionAttempt.reason;
-  }
-  if (provideCredentialsPromise.status === 'rejected') {
-    throw provideCredentialsPromise.reason;
-  }
+  );
 }
 
 function createExternalBrowserConnection(
@@ -316,7 +282,7 @@ describe('EXTERNALBROWSER authentication', () => {
           const connection = createExternalBrowserConnection(user);
 
           // When Trying to Connect with headless browser providing valid credentials
-          await connectWithBrowserAutomation(() => connection.connectAsync(), user, password);
+          await connectWithExternalBrowser(() => connection.connectAsync(), user, password);
           destroyConnectionAfterTest(connection);
 
           // Then Login is successful and simple query can be executed
@@ -329,7 +295,7 @@ describe('EXTERNALBROWSER authentication', () => {
           const browserLoginConnection = createExternalBrowserConnection(user, {
             clientStoreTemporaryCredential: true,
           });
-          await connectWithBrowserAutomation(
+          await connectWithExternalBrowser(
             () => browserLoginConnection.connectAsync(),
             user,
             password,

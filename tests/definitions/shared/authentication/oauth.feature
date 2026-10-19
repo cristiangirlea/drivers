@@ -117,9 +117,9 @@ Feature: OAuth Authentication
     When Trying to Connect
     Then Connection fails with an authentication / login error
 
-  @core_e2e @odbc_e2e @python_e2e @jdbc_e2e
+  @core_e2e @odbc_e2e @python_e2e @jdbc_e2e @nodejs_e2e
   Scenario: oauth should authenticate using authorization code flow
-    Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret. `oauth_authorization_url` and `oauth_token_request_url` are forwarded from parameters when present (otherwise the driver falls back to the Snowflake-IdP defaults `https://{host}/oauth/authorize` and `https://{host}/oauth/token-request`). `client_store_temporary_credential=true` lets the AC flow short-circuit on subsequent runs by re-using the cached access / refresh token (AC state machine: cache → refresh → interactive).
+    Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id / secret
     When Trying to Connect (this will spawn the local-loopback HTTP listener and `xdg-open`/`open`/`ShellExecute` the IdP login URL unless a previously cached access token short-circuits the leg)
     Then Login is successful and a simple query can be executed
 
@@ -129,7 +129,7 @@ Feature: OAuth Authentication
     When Trying to Connect — should NOT spawn a browser; the pre-seeded access token must satisfy the AC short-circuit.
     Then Login is successful and a simple query can be executed
 
-  @core_e2e @odbc_e2e @python_e2e @jdbc_e2e
+  @core_e2e @odbc_e2e @python_e2e @jdbc_e2e @nodejs_e2e
   Scenario: oauth should reuse cached access token without browser interaction
     Given Authentication is set to OAUTH_AUTHORIZATION_CODE with client_store_temporary_credential=true and a token has been cached from a previous browser authentication
     When Trying to Connect without browser interaction
@@ -141,17 +141,11 @@ Feature: OAuth Authentication
     When Trying to Connect
     Then Login is successful and a simple query can be executed
 
-  @core_e2e @odbc_e2e @python_e2e @jdbc_e2e
+  @core_e2e @odbc_e2e @python_e2e @jdbc_e2e @nodejs_e2e
   Scenario: oauth should fail authorization code flow with bad client secret
-    Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id but a deliberately invalid client secret. The IdP token-exchange step must reject the credentials and the driver must surface an authentication / login error.
+    Given Authentication is set to OAUTH_AUTHORIZATION_CODE with a valid client id but a deliberately invalid client secret
     When Trying to Connect
     Then Connection fails with an authentication / login error
-
-  @nodejs_e2e
-  Scenario: should reject a mismatched username for a pre-acquired token
-    Given Authentication is set to a pre-acquired token with a username that is not the user tied to the access token
-    When Trying to Connect
-    Then Connection fails with "The user you were trying to authenticate as differs from the user tied to the access token."
 
   # Wrapper-only E2E scenarios -- not implemented in sf_core because the
   # Rust e2e harness covers different cases (keyring short-circuit) and
@@ -187,3 +181,9 @@ Feature: OAuth Authentication
     Given Authentication is set to OAUTH_CLIENT_CREDENTIALS with a valid client id / secret and an external IdP token URL and user is omitted
     When Trying to Connect without user
     Then Login is successful and a simple query can be executed
+
+  @nodejs_e2e
+  Scenario: should reject a mismatched username for a pre-acquired token
+    Given Authentication is set to a pre-acquired token with a username that is not the user tied to the access token
+    When Trying to Connect
+    Then Connection fails with "The user you were trying to authenticate as differs from the user tied to the access token."

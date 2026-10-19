@@ -62,11 +62,46 @@ Deferred work — covered **last**, only once the corresponding feature support 
     `nodejs/tests/e2e/authentication/user-password-mfa.test.ts`.
   - [`authentication/testOauth.js`](./authentication/testOauth.js) — not a whole-file
     move. `Successful connection` runs as `oauth should authenticate with pre acquired access token`.
-    `Mismatched username` runs as `should reject a mismatched username for a pre-acquired token`.
+    `Mismatched username` is `should reject a mismatched username for a pre-acquired token`.
+    The Node test branches on BD 98 for the wrapped message. Core
+    `should_reject_a_mismatched_username_for_a_pre_acquired_token` in
+    `oauth_scenarios.rs` checks that wiremock `390309` fails the connect and is not retried.
     `Invalid token` is `it.skip` (`oauth should fail legacy authentication with invalid token`).
     Python, JDBC, and ODBC skip that live negative so a junk token does not lock the
     shared account. Core ignores every OAuth e2e test behind `auth_oauth_e2e`, including
     the success tests. The skip is the disposition; that old test was not migrated.
+  - [`authentication/testOauthSnowflakeAuthorizationCode.js`](./authentication/testOauthSnowflakeAuthorizationCode.js)
+    — deleted from the snapshot. Per test:
+    - `Successful connection` is `oauth should authenticate using authorization code flow`.
+    - `Mismatched Username` is core
+      `should_reject_a_mismatched_username_for_authorization_code` in
+      `oauth_scenarios.rs`. Wiremock returns `390309`, the connect fails,
+      and the connection stays down. A cached access token makes the login run
+      without a browser.
+    - `External browser timeout` is `should time out authorization code when browser credentials are not provided`.
+      The new driver asserts the BD 95 fragment `OAuth browser authorization timed out`.
+      The old exact `Browser action timed out after N ms.` string is not pinned.
+    - `obtains the id token from the server and saves it on the local storage` is the first
+      connect in `oauth should reuse cached access token without browser interaction`.
+    - `the token is saved in the credential manager` is core
+      `should_login_with_authorization_code_using_cached_refresh_token`, which asserts the
+      refreshed access token and the rotated refresh token are written through `TokenCache`.
+    - `authenticates by token, browser credentials not needed` is that Node test's second
+      connect, whose `openExternalBrowserCallback` throws if a browser is launched. Core
+      `should_login_with_authorization_code_using_cached_access_token` checks the same
+      short-circuit by asserting that no IdP token request is made.
+    - `opens browser again when token is incorrect` removed only the access token and left the
+      refresh token. Both drivers then refresh without a browser. That is core
+      `should_login_with_authorization_code_using_cached_refresh_token`.
+    - `refreshes the token for credential cache key` is retired. It compared `removeFromCache`'s
+      return value with the earlier access token, so it never read a refreshed token. Refresh is
+      covered by core `should_login_with_authorization_code_using_cached_refresh_token`,
+      `should_evict_cached_at_and_retry_via_refresh_token_on_390303`, and
+      `should_evict_cached_at_and_retry_via_refresh_token_on_390318`.
+  - [`authentication/testOauthOktaAuthorizationCode.js`](./authentication/testOauthOktaAuthorizationCode.js),
+    [`authentication/testOauthSnowflakeWildcardsAuthorizationCode.js`](./authentication/testOauthSnowflakeWildcardsAuthorizationCode.js)
+    — TODO(SNOW-4291607): implement when CI support lands for the external Okta
+    authorization-code client and the wildcard Snowflake client with no redirect URI.
 
 ## Integration tests (`integration/`), sorted by priority
 
@@ -188,8 +223,18 @@ sanity-check test that validates CRL works (and ideally one that validates CRL t
 
 Each of these depends on the corresponding auth provider landing in `sf_core` + the new driver:
 
-- `integration/wiremock/testOauthAuthorizationCode.js` — migrate once Authorization Code is
-  implemented in `sf_core` and the new Node driver.
+- `integration/wiremock/testOauthAuthorizationCode.js` — still in the snapshot. Authorization
+  Code is implemented, and the file is not migrated:
+  - Successful flow: live `oauth should authenticate using authorization code flow` plus core
+    `should_login_with_authorization_code_through_injected_opener`.
+  - Empty scope: no assertion that the authorize URL omits `scope`. Core
+    `should_omit_oauth_scope_when_scope_and_role_are_absent` only checks the resolver.
+  - Redirect `invalid_scope`, invalid state, HTTP 400 invalid code, missing token, and occupied
+    port: no authorization-code test preserves those assertions. Unit `OAuthError::StateMismatch`
+    exists; the Node outer error and the old port-unavailable message are not covered.
+  - Single-use refresh: the old test only checks that connect does not throw. Core
+    `should_omit_single_use_refresh_flag_from_refresh_grant_body` checks the refresh body, which
+    that test did not.
 - `integration/wiremock/testOauthClientCredentials.js` — migrate once Client Credentials is
   implemented in `sf_core` and the new Node driver.
 - `integration/wiremock/testOauthPat.js` — migrate once PAT is implemented in `sf_core` and the
@@ -267,6 +312,16 @@ called out explicitly.
   `ConnectionConfig`. The `invalid username with OAUTH authenticator` and
   `invalid oauth token` type-check rows stay; `toCoreConnectionOptions`
   currently `String()`s those values.
+  The two `oauth public client parameters` rows (`.com` and `.cn`) assert the filled
+  config: client id and secret `LOCAL_APPLICATION`, and
+  `http://{host}:8082/oauth/authorize` plus `http://{host}:8082/oauth/token-request`.
+  The shared authorization-code login leaves both URL options unset, as the other wrappers
+  do, and checks that login succeeds. It does not assert those filled values.
+  `LOCAL_APPLICATION` is
+  `resolve_client_credentials_substitutes_local_application_for_snowflake_idp`.
+  The path suffix is `resolve_default_urls_use_server_host`, which builds
+  `https://{host}/oauth/authorize` and `https://{host}/oauth/token-request` and drops the
+  connection protocol and port. The `http://{host}:{port}` form stays unmapped.
   - JWT-named negatives (`missing/invalid username with SNOWFLAKE_JWT`, `invalid private key` /
     `privateKeyPath` / `privateKeyPass`) assert `ERR_CONN_CREATE_*` on `new ConnectionConfig`.
     The new driver reports these at connect as InvalidParameterError without a code (BD#101), so
