@@ -12,7 +12,10 @@ crate-type = ["cdylib"]
 fips = ["sf_core/fips"]
 
 [dependencies]
-sf_core = { path = "../sf_core" }
+# The bridge does not call sf_core's protobuf API, but on Windows sf_core's DLL
+# is linked with exports.def, which lists the protobuf functions. Without
+# `protobuf` the link fails with unresolved externals.
+sf_core = { path = "../sf_core", default-features = false, features = ["protobuf"] }
 sf_output_format = { path = "../sf_output_format" }
 sf_types = { path = "../sf_types" }
 napi = { version = "3", default-features = false, features = ["napi9", "async", "chrono_date"] }
@@ -27,6 +30,12 @@ tokio = { version = "1.50.0", features = ["sync", "time"] }
 uuid = { version = "1.18", features = ["v4"] }
 chrono-tz = "0.10.4"
 snafu = "0.8.7"
+
+# sf_core's `sonic-json` (sonic-rs) needs SIMD and does not build for 32-bit
+# targets such as i686-pc-windows-msvc. Those targets use sf_core's serde_json
+# parser instead.
+[target.'cfg(any(target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
+sf_core = { path = "../sf_core", default-features = false, features = ["sonic-json"] }
 
 [dev-dependencies]
 reqwest = { version = "0.12.23", default-features = false }

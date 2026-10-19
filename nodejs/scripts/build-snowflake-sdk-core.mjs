@@ -21,6 +21,15 @@ const { values: args } = parseArgs({
   options: {
     release: { type: 'boolean', default: false },
     fips: { type: 'boolean', default: false },
+    // Rust target triple, one of `napi.targets`. Without it, napi builds for
+    // the host's default Rust target. That is fine for local builds, but the
+    // package build passes it on every platform:
+    //   - Some targets have no runner of their own. i686 Windows builds on an
+    //     x64 Windows runner, where the host default gives an x64 binary.
+    //   - If a runner's OS or CPU no longer matches its target, the build
+    //     cross-compiles or fails. With the host default it would quietly
+    //     produce a package for a different platform.
+    target: { type: 'string' },
   },
 });
 
@@ -52,6 +61,7 @@ const cli = new NapiCli();
 const { task } = await cli.build({
   platform: true,
   release: args.release,
+  target: args.target,
   cargoName: 'nodejs_bridge',
   manifestPath: path.join(ROOT_DIR, '..', 'nodejs_bridge', 'Cargo.toml'),
   packageJsonPath: NODE_SDK_PACKAGE_JSON_PATH,
@@ -100,7 +110,7 @@ await fs.copyFile(
 
 // 4. Log the build output
 console.log(
-  `build (release: ${args.release}, fips: ${args.fips}) -> _build/${NAPI_CONFIG.packageName}/ (@snowflake/sdk-core-${platformTriple})`,
+  `build (release: ${args.release}, fips: ${args.fips}, target: ${args.target ?? 'host'}) -> _build/${NAPI_CONFIG.packageName}/ (@snowflake/sdk-core-${platformTriple})`,
 );
 for (const file of await fs.readdir(BUILD_CORE_PACKAGE_DIR)) {
   console.log(`  ${file}`);

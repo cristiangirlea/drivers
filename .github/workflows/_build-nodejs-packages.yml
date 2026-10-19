@@ -3,7 +3,7 @@ name: Build Node.js Packages
 # Builds the Node.js npm packages (unsigned, not published):
 #   - snowflake-sdk: the TypeScript package. Platform independent, built once.
 #   - @snowflake/sdk-core-<platform>: the native addon (release Rust build),
-#     one package per build_core matrix row.
+#     one package per `napi.targets` entry in nodejs/package.json.
 #   - nodejs-packages: one artifact with all of the above.
 
 on:
@@ -16,15 +16,27 @@ jobs:
   build_core:
     strategy:
       fail-fast: false
-      # TODO: one OS for now since we run text matric only on x64 ubuntu
+      # One row per napi target from nodejs/package.json. The bundle job fails
+      # when the number of core packages does not match `napi.targets`.
       #
-      # One row per napi target from nodejs/package.json. `pack:core` builds for
-      # the runner it runs on, so each row needs a runner of that platform.
-      # `name` matches the napi platform suffix (@snowflake/sdk-core-<name>),
-      # which keeps artifact names unique.
+      # - `name` matches the napi platform suffix (@snowflake/sdk-core-<name>),
+      #   which keeps artifact names unique.
+      # - Each row builds on a runner of its own OS and CPU, like the JDBC and
+      #   Python builds. Only i686 Windows is cross-compiled, on x64 Windows.
+      # - Linux builds run in the same manylinux_2_28 (glibc) and musllinux_1_2
+      #   (musl) images as the JDBC and Python builds. A .node built for one
+      #   C library does not load on the other.
       matrix:
         include:
-          - { name: linux-x64-gnu, os: ubuntu-latest }
+          - { name: darwin-arm64,     os: macos-latest,     target: aarch64-apple-darwin }
+          - { name: darwin-x64,       os: macos-15-intel,   target: x86_64-apple-darwin }
+          - { name: linux-arm64-gnu,  os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu,  container: "quay.io/pypa/manylinux_2_28_aarch64" }
+          - { name: linux-arm64-musl, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, container: "quay.io/pypa/musllinux_1_2_aarch64" }
+          - { name: linux-x64-gnu,    os: ubuntu-latest,    target: x86_64-unknown-linux-gnu,   container: "quay.io/pypa/manylinux_2_28_x86_64" }
+          - { name: linux-x64-musl,   os: ubuntu-latest,    target: x86_64-unknown-linux-musl,  container: "quay.io/pypa/musllinux_1_2_x86_64" }
+          - { name: win32-arm64-msvc, os: windows-11-arm,   target: aarch64-pc-windows-msvc }
+          - { name: win32-x64-msvc,   os: windows-latest,   target: x86_64-pc-windows-msvc }
+          - { name: win32-ia32-msvc,  os: windows-latest,   target: i686-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
     name: build_core (${{ matrix.name }})
     timeout-minutes: 60
@@ -45,6 +57,17 @@ jobs:
       - name: Upgrade npm
         run: npm install -g npm@11
 
+      # Installs the pinned toolchain before `rustup target add` and before
+      # "Restore Rust cache", which runs `rustc -vV` for the cache key.
+      # ubuntu-arm and macos-arm leave it half-installed when the first rustc
+      # auto-installs it.
+      - name: Ensure Rust toolchain is cleanly installed
+        uses: ./.github/actions/ensure-rust-toolchain
+
+      - name: Add Rust target
+        if: runner.os != 'Linux'
+        run: rustup target add ${{ matrix.target }}
+
       # Release output lives in target/release, so it cannot reuse the debug
       # cache from Node.js CI. It gets its own key per platform.
       - name: Restore Rust cache
@@ -56,11 +79,93 @@ jobs:
           shared-key: nodejs-release-${{ matrix.name }}
 
       - name: Install dependencies
+        if: runner.os != 'Linux'
         run: npm install
         working-directory: nodejs
 
-      - name: Build and pack @snowflake/sdk-core
-        run: npm run pack:core
+      - name: Build @snowflake/sdk-core
+        if: runner.os != 'Linux'
+        shell: bash
+        run: npm run build:core -- --release --target ${{ matrix.target }}
+        working-directory: nodejs
+        env:
+          # MACOSX_DEPLOYMENT_TARGET is the standard Apple setting for the
+          # oldest macOS version a binary supports. rustc and the C compiler
+          # used by native dependencies (such as aws-lc-sys) read it and
+          # write it into the .node file. macOS does not load the file on
+          # older versions.
+          # - 11.0 is the oldest macOS that Node.js 22 supports, so a lower
+          #   value would not help anyone.
+          # - On Windows the value is empty, and nothing reads it.
+          MACOSX_DEPLOYMENT_TARGET: ${{ runner.os == 'macOS' && '11.0' || '' }}
+
+      # Node.js inside the container:
+      #   - glibc: the host Node.js from setup-node is mounted. Official
+      #     Node.js Linux builds need glibc 2.28, which manylinux_2_28 has.
+      #   - musl: Node.js has no official musl build, so it comes from apk,
+      #     together with the C toolchain and kernel headers that the
+      #     musllinux image lacks.
+      #
+      # The build runs in a different system than the runner, so npm
+      # dependencies are installed fresh inside the container. Packages with
+      # prebuilt native binaries then match the container's C library (glibc
+      # or musl), not the runner's glibc.
+      - name: Build @snowflake/sdk-core in manylinux/musllinux container (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$HOME/.cargo/registry" "$HOME/.cargo/git"
+          docker run --rm \
+            -v "$HOME/.cargo/registry:/root/.cargo/registry" \
+            -v "$HOME/.cargo/git:/root/.cargo/git" \
+            -v "$(dirname "$(dirname "$(command -v node)")"):/opt/host-node" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            ${{ matrix.container }} \
+            bash -c '
+              set -euo pipefail
+              if [[ "${{ matrix.target }}" == *-musl ]]; then
+                apk add --no-cache build-base curl linux-headers nodejs npm
+                # With --target, the napi CLI sets the aarch64 musl linker to
+                # the cross-compiler aarch64-linux-musl-gcc, which Alpine does
+                # not have. This build is native, so plain gcc is the linker.
+                # The napi CLI keeps a value that is already set.
+                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=gcc
+              else
+                export PATH="/opt/host-node/bin:$PATH"
+              fi
+              # npm 10.x (the version bundled with Node 22) crashes on `npm install`
+              # with "Cannot read properties of null (reading edgesOut)". npm 11
+              # does not hit it. https://github.com/npm/cli/issues/9787
+              # TODO: Remove this once npm fixes the bug, so the build runs on the npm that
+              # ships with Node — matching how most users install the driver.
+              npm install -g npm@11
+              # sh.rustup.rs detects the wrong libc inside musl containers, so
+              # rustup-init is downloaded for the exact host triple.
+              curl --proto "=https" --tlsv1.2 -sSf \
+                "https://static.rust-lang.org/rustup/dist/${{ matrix.target }}/rustup-init" \
+                -o /tmp/rustup-init
+              chmod +x /tmp/rustup-init
+              channel=$(sed -n "s/^channel *= *\"\(.*\)\"/\1/p" rust-toolchain.toml)
+              /tmp/rustup-init -y --profile minimal --default-toolchain "$channel" \
+                --default-host ${{ matrix.target }}
+              export PATH="/root/.cargo/bin:$PATH"
+              cd nodejs
+              npm install
+              npm run build:core -- --release --target ${{ matrix.target }}
+            '
+
+      # The container writes as root. Later steps and the cache save need to
+      # read and write these files as the runner user.
+      - name: Fix ownership of container output (Linux)
+        if: always() && runner.os == 'Linux'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" \
+            "$GITHUB_WORKSPACE" \
+            "$HOME/.cargo/registry" "$HOME/.cargo/git"
+
+      - name: Pack @snowflake/sdk-core
+        shell: bash
+        run: npm pack ./_build/@snowflake/sdk-core --pack-destination ./_build
         working-directory: nodejs
 
       # build_sdk compiles against the committed file, so it must match the
@@ -138,6 +243,13 @@ jobs:
     name: bundle packages
     timeout-minutes: 10
     steps:
+      # Runs before the downloads: checkout clears the workspace.
+      - name: Checkout nodejs/package.json
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: nodejs/package.json
+          sparse-checkout-cone-mode: false
+
       - name: Download core packages
         uses: actions/download-artifact@v8
         with:
@@ -153,6 +265,19 @@ jobs:
 
       - name: Show packages
         run: ls -l release
+
+      - name: Check one core package per napi target
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(jq '.napi.targets | length' nodejs/package.json)
+          shopt -s nullglob
+          packages=(release/snowflake-sdk-core-*.tgz)
+          if [ "${#packages[@]}" -ne "$expected" ]; then
+            echo "::error::Found ${#packages[@]} @snowflake/sdk-core packages, but nodejs/package.json declares $expected napi targets. Each target needs one build_core matrix row."
+            exit 1
+          fi
+          echo "Found $expected @snowflake/sdk-core packages, one per napi target."
 
       # overwrite: a re-run of this job in the same workflow run uploads the
       # same artifact name again.

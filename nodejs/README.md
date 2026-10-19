@@ -14,6 +14,8 @@ You rarely run these by hand — tests build what they need automatically (see [
 
 `build:core` makes a debug build by default. Pass `--release` for the optimized build and `--fips` to link the FIPS crypto module, e.g. `npm run build:core -- --release --fips`.
 
+It builds for the host platform. Pass `--target <triple>` (one of `napi.targets` in `package.json`) to build for another one; the matching Rust target must be installed.
+
 ### Packing
 
 Two scripts build and pack the npm tarballs into `_build/`:
