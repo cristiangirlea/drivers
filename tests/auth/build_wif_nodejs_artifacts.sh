@@ -17,6 +17,13 @@ log() {
 mkdir -p "$ARTIFACT_DIR"
 cd "$REPO_ROOT/nodejs"
 
+# npm 10.x (the version bundled with Node 22) crashes on `npm install`
+# with "Cannot read properties of null (reading 'edgesOut')". npm 11
+# does not hit it. https://github.com/npm/cli/issues/9787
+# TODO: Remove this once npm fixes the bug, so the build runs on the npm that
+# ships with Node — matching how most users install the driver.
+log "npm install -g npm@11"
+npm install -g npm@11
 log "npm install"
 npm install
 log "Building the native core (cargo, several minutes cold)"
@@ -34,6 +41,7 @@ tar -czf "$ARTIFACT" -C "$REPO_ROOT" \
   nodejs/tsconfig.json \
   nodejs/vitest.config.ts \
   nodejs/tests \
+  nodejs/scripts \
   nodejs/_build \
   nodejs/node_modules
 log "Packed in $((SECONDS - pack_started))s"
