@@ -3101,6 +3101,80 @@ mod tests {
         );
     }
 
+    // Mirrors SNOW-4219220 in libsnowflakeclient, where a non-seekable
+    // streambuf meant a C-SDK-internal retry resent an empty single-part PUT
+    // body. Here the SDK owns the retry (`to_aws_retry_config`), and
+    // `put_object`'s SSE-from-path body hands it `ByteStream::read_from`,
+    // documented above as "retryable"; this pins that claim down against a
+    // transient 500 that forces the SDK to actually replay the body.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn put_object_retries_transient_5xx_and_replays_full_body() {
+        use std::io::Write;
+
+        let payload = vec![b'q'; 80 * 1024];
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(&payload).unwrap();
+        tmp.flush().unwrap();
+        let file_path = tmp.path().to_path_buf();
+
+        let mock = MockServer::start().await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_for_response = calls.clone();
+        Mock::given(method("PUT"))
+            .and(path("/test-bucket/prefix/f.dat"))
+            .respond_with(move |_: &Request| {
+                if calls_for_response.fetch_add(1, MpOrdering::SeqCst) == 0 {
+                    ResponseTemplate::new(500).set_body_raw(
+                        "<Error><Code>InternalError</Code></Error>",
+                        "application/xml",
+                    )
+                } else {
+                    ResponseTemplate::new(200)
+                }
+            })
+            .expect(2)
+            .mount(&mock)
+            .await;
+
+        let status = upload_to_s3_or_skip(
+            PreparedUpload {
+                source: crate::file_manager::types::PreparedSource::Path(file_path),
+                digest: "0".repeat(64),
+                cse: None,
+            },
+            &mp_stage(mock.uri()),
+            "f.dat",
+            true,
+            false,
+            &zero_backoff_policy_with_attempts(2),
+            MultipartParams::default(),
+            TransferCtx::default(),
+        )
+        .await
+        .expect("the SDK should retry the transient 500 and the upload should succeed");
+
+        assert_eq!(status, UploadStatus::Uploaded);
+        assert_eq!(
+            calls.load(MpOrdering::SeqCst),
+            2,
+            "the SDK must retry the PUT once internally"
+        );
+
+        let requests = mock
+            .received_requests()
+            .await
+            .expect("wiremock should retain received requests");
+        let puts: Vec<_> = requests
+            .iter()
+            .filter(|r| r.method.as_str() == "PUT")
+            .collect();
+        assert_eq!(puts.len(), 2, "exactly one SDK-internal retry expected");
+        assert_eq!(
+            puts[1].body, payload,
+            "the retried PUT must resend the full original body, not an empty or truncated one"
+        );
+    }
+
     // --- Pre-upload HEAD probe and skip-decision (wiremock) ---
     //
     // Contract: HEAD is issued only when at least one skip branch could fire
