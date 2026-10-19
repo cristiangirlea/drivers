@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex, OnceLock};
 
 use jni::JNIEnv;
-use jni::objects::{JByteArray, JClass, JLongArray, JObject, JString, JValue};
+use jni::objects::{JByteArray, JClass, JLongArray, JObject, JObjectArray, JString, JValue};
 use jni::sys::{jint, jlong, jobject, jstring};
 use proto_utils::{CancellableTransport, ProtoError, Transport};
 use sf_core::logging::LogManager;
@@ -59,6 +59,7 @@ struct JdbcBridge {
     /// lives on the transport's registry (`RustTransport::register`).
     results: Mutex<ResultMap>,
     native_buffers: native_buffer::NativeBufferRegistry,
+    arrow_streams: arrow_stream::ArrowStreamRegistry,
 }
 
 impl JdbcBridge {
@@ -85,6 +86,7 @@ impl JdbcBridge {
             dispatch,
             results: Mutex::new(HashMap::new()),
             native_buffers: native_buffer::NativeBufferRegistry::new(),
+            arrow_streams: arrow_stream::ArrowStreamRegistry::new(),
         }
     }
 
@@ -188,6 +190,23 @@ fn ffi_guard<T>(fallback: T, body: impl FnOnce() -> T) -> T {
             fallback
         }
     }
+}
+
+fn ffi_catch<T>(body: impl FnOnce() -> T) -> Option<T> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            tracing::error!("panic caught at JNI boundary");
+            None
+        }
+    }
+}
+
+fn throw_jni_panic(env: &mut JNIEnv) {
+    let _ = env.throw_new(
+        "java/lang/IllegalStateException",
+        "panic caught at JNI boundary",
+    );
 }
 
 static JDBC_BRIDGE: LazyLock<JdbcBridge> = LazyLock::new(JdbcBridge::new);
@@ -343,6 +362,207 @@ pub extern "system" fn Java_net_snowflake_client_internal_unicore_JNICoreTranspo
     ffi_guard((), || {
         JDBC_BRIDGE.transport.cancel(handle as u64);
     });
+}
+
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub extern "system" fn Java_net_snowflake_client_internal_unicore_NativeArrowStream_nativeOpen(
+    mut env: JNIEnv,
+    _class: JClass,
+    pointer: jlong,
+) -> jlong {
+    ffi_catch(|| match JDBC_BRIDGE.arrow_streams.open(pointer) {
+        Ok(handle) => handle as jlong,
+        Err(error) => {
+            throw_arrow_stream_error(&mut env, &error);
+            0
+        }
+    })
+    .unwrap_or_else(|| {
+        throw_jni_panic(&mut env);
+        0
+    })
+}
+
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub extern "system" fn Java_net_snowflake_client_internal_unicore_NativeArrowStream_nativeSchema(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jni::sys::jbyteArray {
+    ffi_catch(|| match JDBC_BRIDGE.arrow_streams.schema(handle as u64) {
+        Ok(schema) => match env.byte_array_from_slice(&schema) {
+            Ok(array) => array.into_raw(),
+            Err(error) => {
+                let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+                std::ptr::null_mut()
+            }
+        },
+        Err(error) => {
+            throw_arrow_stream_error(&mut env, &error);
+            std::ptr::null_mut()
+        }
+    })
+    .unwrap_or_else(|| {
+        throw_jni_panic(&mut env);
+        std::ptr::null_mut()
+    })
+}
+
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub extern "system" fn Java_net_snowflake_client_internal_unicore_NativeArrowStream_nativeNextBatch(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jobject {
+    ffi_catch(|| {
+        let export_result = JDBC_BRIDGE
+            .arrow_streams
+            .export_next_batch(handle as u64, |batch| {
+                let Some(batch) = batch else {
+                    return Ok(std::ptr::null_mut());
+                };
+                // TODO(SNOW-4248904): delete each column local ref after set_object_array_element.
+                env.with_local_frame_returning_local(32, |env| {
+                    batch_to_java(env, batch).map_err(JniExportError::from)
+                })
+                .map(|object| object.into_raw())
+                .map_err(|JniExportError(message)| message)
+            });
+        match export_result {
+            Ok(object) => object,
+            Err(error) => {
+                throw_arrow_stream_error(&mut env, &error);
+                std::ptr::null_mut()
+            }
+        }
+    })
+    .unwrap_or_else(|| {
+        throw_jni_panic(&mut env);
+        std::ptr::null_mut()
+    })
+}
+
+fn throw_arrow_stream_error(env: &mut JNIEnv, error: &arrow_stream::ArrowStreamError) {
+    let _ = env.throw_new("java/lang/IllegalStateException", error.java_message());
+}
+
+struct JniExportError(String);
+
+impl From<String> for JniExportError {
+    fn from(message: String) -> Self {
+        Self(message)
+    }
+}
+
+impl From<jni::errors::Error> for JniExportError {
+    fn from(error: jni::errors::Error) -> Self {
+        Self(error.to_string())
+    }
+}
+
+fn objects<'local>(env: &mut JNIEnv<'local>, len: i32) -> Result<JObjectArray<'local>, String> {
+    env.new_object_array(len, "java/lang/Object", JObject::null())
+        .map_err(|error| error.to_string())
+}
+
+fn put<'local>(
+    env: &mut JNIEnv<'local>,
+    array: &JObjectArray<'local>,
+    index: i32,
+    value: JObject<'local>,
+) -> Result<(), String> {
+    env.set_object_array_element(array, index, value)
+        .map_err(|error| error.to_string())
+}
+
+fn batch_to_java<'local>(
+    env: &mut JNIEnv<'local>,
+    batch: &arrow_stream::BatchRef,
+) -> Result<JObject<'local>, String> {
+    let columns = objects(env, batch.columns.len() as i32)?;
+    for (index, column) in batch.columns.iter().enumerate() {
+        let column_object = array_to_java(env, column)?;
+        put(env, &columns, index as i32, column_object)?;
+    }
+    let row_count = env
+        .new_object("java/lang/Integer", "(I)V", &[JValue::Int(batch.row_count)])
+        .map_err(|error| error.to_string())?;
+    let result = objects(env, 2)?;
+    put(env, &result, 0, row_count)?;
+    put(env, &result, 1, JObject::from(columns))?;
+    Ok(JObject::from(result))
+}
+
+fn array_to_java<'local>(
+    env: &mut JNIEnv<'local>,
+    array: &arrow_stream::ArrayRef,
+) -> Result<JObject<'local>, String> {
+    let mut validity: Option<JObject<'local>> = None;
+    let mut offsets: Option<JObject<'local>> = None;
+    let mut values: Option<JObject<'local>> = None;
+    for buffer in &array.buffers {
+        let slot = match buffer.role {
+            arrow_stream::BUFFER_VALIDITY => &mut validity,
+            arrow_stream::BUFFER_OFFSETS => &mut offsets,
+            arrow_stream::BUFFER_VALUES => &mut values,
+            other => return Err(format!("unknown Arrow buffer role {other}")),
+        };
+        if slot.is_some() {
+            return Err(format!(
+                "duplicate Arrow buffer role {} on column export",
+                buffer.role
+            ));
+        }
+        *slot = Some(wrap_buffer(env, buffer)?);
+    }
+    let validity = validity.unwrap_or(JObject::null());
+    let offsets = offsets.unwrap_or(JObject::null());
+    let values = values.unwrap_or(JObject::null());
+    let children = objects(env, array.children.len() as i32)?;
+    for (index, child) in array.children.iter().enumerate() {
+        let child_object = array_to_java(env, child)?;
+        put(env, &children, index as i32, child_object)?;
+    }
+    let result = objects(env, 4)?;
+    put(env, &result, 0, validity)?;
+    put(env, &result, 1, offsets)?;
+    put(env, &result, 2, values)?;
+    put(env, &result, 3, JObject::from(children))?;
+    Ok(JObject::from(result))
+}
+
+fn wrap_buffer<'local>(
+    env: &mut JNIEnv<'local>,
+    buffer: &arrow_stream::BufferRef,
+) -> Result<JObject<'local>, String> {
+    if buffer.length == 0 {
+        return Ok(JObject::null());
+    }
+    if buffer.address == 0 {
+        return Err("arrow buffer has a null address".to_string());
+    }
+    // SAFETY: `address` is non-null and names `length` bytes inside the RecordBatch held in
+    // StreamState for this handle. That batch stays alive until the next next_batch or close.
+    // Java must not use the ByteBuffer after that, and must not close the stream concurrently
+    // with this return.
+    let direct = unsafe {
+        env.new_direct_byte_buffer(buffer.address as *mut u8, buffer.length)
+            .map_err(|error| error.to_string())?
+    };
+    Ok(JObject::from(direct))
+}
+
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub extern "system" fn Java_net_snowflake_client_internal_unicore_NativeArrowStream_nativeClose(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) {
+    ffi_guard((), || JDBC_BRIDGE.arrow_streams.close(handle as u64));
 }
 
 #[unsafe(no_mangle)]

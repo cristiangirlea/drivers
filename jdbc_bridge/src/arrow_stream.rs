@@ -1,6 +1,3 @@
-// jdbc_bridge's JNI entry points do not call this module.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::sync::{Arc, Mutex};
@@ -184,6 +181,10 @@ impl ArrowStreamRegistry {
         }
     }
 
+    /// `pointer` is `0` or a `Box::into_raw` `FFI_ArrowArrayStream`. The caller does
+    /// not free `pointer` after this returns. This consumes that allocation, including
+    /// when `ArrowArrayStreamReader::try_new` fails. A null or misaligned pointer is
+    /// not consumed.
     pub(crate) fn open(&self, pointer: i64) -> Result<u64, ArrowStreamError> {
         let raw = pointer as usize as *mut FFI_ArrowArrayStream;
         if raw.is_null() || !raw.is_aligned() {
