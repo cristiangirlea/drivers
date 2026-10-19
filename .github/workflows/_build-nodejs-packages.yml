@@ -163,14 +163,9 @@ jobs:
             "$GITHUB_WORKSPACE" \
             "$HOME/.cargo/registry" "$HOME/.cargo/git"
 
-      - name: Pack @snowflake/sdk-core
-        shell: bash
-        run: npm pack ./_build/@snowflake/sdk-core --pack-destination ./_build
-        working-directory: nodejs
-
       # build_sdk compiles against the committed file, so it must match the
       # types of the binary built here.
-      - name: Check committed binary types match the core build
+      - name: Check committed @snowflake/sdk-core binary types match the core build
         shell: bash
         run: |
           set -euo pipefail
@@ -179,6 +174,30 @@ jobs:
             echo "Run \`npm run build:core\` in nodejs/ and commit the result. Do not edit the file by hand." >&2
             exit 1
           fi
+
+      # 25 MiB is our size budget for one sdk-core binary. Before you raise it,
+      # find out why the binary grew past it, and agree on the bump with the
+      # team. The limit is for the unpacked .node file, which is what users
+      # get on disk. The npm tarball is compressed and much smaller.
+      - name: Check @snowflake/sdk-core binary size
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_bytes=$((25 * 1024 * 1024))
+          for binary in _build/@snowflake/sdk-core/*.node; do
+            size=$(wc -c < "$binary" | tr -d '[:space:]')
+            echo "$binary: $size bytes (budget: $max_bytes bytes)"
+            if (( size > max_bytes )); then
+              echo "::error::$binary is $size bytes, over the $max_bytes byte (25 MiB) budget."
+              exit 1
+            fi
+          done
+        working-directory: nodejs
+
+      - name: Pack @snowflake/sdk-core
+        shell: bash
+        run: npm pack ./_build/@snowflake/sdk-core --pack-destination ./_build
+        working-directory: nodejs
 
       - name: Upload core package
         uses: actions/upload-artifact@v7
