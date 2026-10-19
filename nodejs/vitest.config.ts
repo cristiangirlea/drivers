@@ -48,6 +48,11 @@ export default defineConfig({
         name: 'requires_wif_vm',
         skip: process.env.SNOWFLAKE_RUNNING_INSIDE_WIF_VM !== 'true',
       },
+      {
+        // tests/auth/auth_no_mfa_nodejs.sh selects parameters_aws_local.json.
+        name: 'requires_no_mfa',
+        skip: process.env.SF_TEST_NO_MFA !== 'true',
+      },
     ],
     projects: [
       {

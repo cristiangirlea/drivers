@@ -4363,7 +4363,7 @@ mod tests {
         assert_eq!(data.password.as_ref().unwrap().reveal(), "testpass");
         assert!(
             data.authenticator.is_none(),
-            "Password auth should NOT include AUTHENTICATOR field (matching old driver behavior)"
+            "Password auth should NOT include the AUTHENTICATOR field (matching old JDBC, Python, and ODBC driver behavior; the old Node.js driver sends SNOWFLAKE)"
         );
     }
 

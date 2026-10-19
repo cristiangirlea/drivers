@@ -115,6 +115,54 @@ jobs:
           registry-cache-hit: ${{ steps.rust-cache.outputs.registry-cache-hit }}
           target-cache-hit: ${{ steps.rust-cache.outputs.target-cache-hit }}
 
+  nodejs_auth_no_mfa:
+    if: >-
+      github.repository_owner != 'snowflakedb'
+      || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    name: Node.js auth no-MFA tests
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Upgrade npm
+        run: npm install -g npm@11
+
+      - name: Restore Rust cache
+        id: rust-cache
+        continue-on-error: true
+        uses: ./.github/actions/cargo-cache
+        with:
+          mode: restore
+          shared-key: "nodejs-auth-no-mfa"
+
+      - name: Run Node.js auth no-MFA tests
+        run: ./tests/auth/auth_no_mfa_nodejs.sh
+        env:
+          PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
+          PARAMETERS_JSON_AWS: ${{ secrets.PARAMETERS_JSON_AWS }}
+          PARAMETERS_JSON_GCP: ${{ secrets.PARAMETERS_JSON_GCP }}
+          PARAMETERS_JSON_AZURE: ${{ secrets.PARAMETERS_JSON_AZURE }}
+          SF_TEST_NO_MFA: true
+
+      - name: Save Rust cache
+        if: always()
+        timeout-minutes: 20
+        continue-on-error: true
+        uses: ./.github/actions/cargo-cache
+        with:
+          mode: save
+          slim-mode: aggressive
+          shared-key: "nodejs-auth-no-mfa"
+          registry-cache-hit: ${{ steps.rust-cache.outputs.registry-cache-hit }}
+          target-cache-hit: ${{ steps.rust-cache.outputs.target-cache-hit }}
+
   odbc_auth_no_mfa:
     if: >-
       github.repository_owner != 'snowflakedb'
@@ -167,7 +215,7 @@ jobs:
           target-cache-hit: ${{ steps.rust-cache.outputs.target-cache-hit }}
 
   auth_no_mfa_status:
-    needs: [jdbc_auth_no_mfa, python_auth_no_mfa, odbc_auth_no_mfa]
+    needs: [jdbc_auth_no_mfa, python_auth_no_mfa, nodejs_auth_no_mfa, odbc_auth_no_mfa]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -177,12 +225,14 @@ jobs:
 
           JDBC_RESULT="${{ needs.jdbc_auth_no_mfa.result }}"
           PYTHON_RESULT="${{ needs.python_auth_no_mfa.result }}"
+          NODEJS_RESULT="${{ needs.nodejs_auth_no_mfa.result }}"
           ODBC_RESULT="${{ needs.odbc_auth_no_mfa.result }}"
 
-          if [[ "$JDBC_RESULT" =~ ^(failure|cancelled)$ || "$PYTHON_RESULT" =~ ^(failure|cancelled)$ || "$ODBC_RESULT" =~ ^(failure|cancelled)$ ]]; then
+          if [[ "$JDBC_RESULT" =~ ^(failure|cancelled)$ || "$PYTHON_RESULT" =~ ^(failure|cancelled)$ || "$NODEJS_RESULT" =~ ^(failure|cancelled)$ || "$ODBC_RESULT" =~ ^(failure|cancelled)$ ]]; then
             echo "✗ Auth No-MFA CI FAILED or CANCELLED"
             echo "  - JDBC: $JDBC_RESULT"
             echo "  - Python: $PYTHON_RESULT"
+            echo "  - Node.js: $NODEJS_RESULT"
             echo "  - ODBC: $ODBC_RESULT"
             exit 1
           fi
