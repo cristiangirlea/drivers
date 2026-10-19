@@ -186,20 +186,18 @@ pub fn tables<E: OdbcEncoding>(
 
     let is_empty_str = |s: &Option<String>| s.as_deref() == Some("");
 
-    // SQL_ALL_CATALOGS special case: catalog="%", schema="", table="", type=""
+    // SQL_ALL_CATALOGS special case: catalog="%", schema="", table=""
     if catalog_raw.as_deref() == Some(SQL_ALL_CATALOGS)
         && is_empty_str(&schema_raw)
         && is_empty_str(&table_raw)
-        && is_empty_str(&type_raw)
     {
         return execute_show_all_catalogs(&mut inner, stmt_handle);
     }
 
-    // SQL_ALL_SCHEMAS special case: schema="%", catalog="", table="", type=""
+    // SQL_ALL_SCHEMAS special case: schema="%", catalog="", table=""
     if schema_raw.as_deref() == Some(SQL_ALL_SCHEMAS)
         && is_empty_str(&catalog_raw)
         && is_empty_str(&table_raw)
-        && is_empty_str(&type_raw)
     {
         return execute_show_all_schemas(&mut inner, stmt_handle);
     }

@@ -443,7 +443,39 @@ TEST_CASE_METHOD(ReadOnlyDbStmtFixture, "SQLTables: SQL_ALL_CATALOGS lists catal
   CHECK(sqltables_get_column(stmt_handle(), 4).is_null());     // TABLE_TYPE is NULL
 }
 
-// The SQL_ALL_SCHEMAS sentinel (catalog="", schema="%", table="", type="") is
+TEST_CASE_METHOD(ReadOnlyDbStmtFixture, "SQLTables: SQL_ALL_CATALOGS with a null TableType lists catalogs",
+                 "[odbc-api][catalog][tables]") {
+  // Given SQL_ALL_CATALOGS with a null TableType: catalog="%", schema="", table="", type=NULL
+  SQLRETURN ret =
+      SQLTables(stmt_handle(), sqlchar("%"), SQL_NTS, sqlchar(""), SQL_NTS, sqlchar(""), SQL_NTS, nullptr, 0);
+  REQUIRE(ret == SQL_SUCCESS);
+
+  ret = SQLFetch(stmt_handle());
+  REQUIRE(ret == SQL_SUCCESS);
+
+  CHECK(sqltables_get_column(stmt_handle(), 1).is_present());
+  CHECK(sqltables_get_column(stmt_handle(), 2).is_null());
+  CHECK(sqltables_get_column(stmt_handle(), 3).is_null());
+  CHECK(sqltables_get_column(stmt_handle(), 4).is_null());
+}
+
+TEST_CASE_METHOD(ReadOnlyDbStmtFixture, "SQLTables: SQL_ALL_CATALOGS with TableType TABLE lists catalogs",
+                 "[odbc-api][catalog][tables]") {
+  // Given SQL_ALL_CATALOGS with a non-empty TableType: catalog="%", schema="", table="", type="TABLE"
+  SQLRETURN ret = SQLTables(stmt_handle(), sqlchar("%"), SQL_NTS, sqlchar(""), SQL_NTS, sqlchar(""), SQL_NTS,
+                            sqlchar("TABLE"), SQL_NTS);
+  REQUIRE(ret == SQL_SUCCESS);
+
+  ret = SQLFetch(stmt_handle());
+  REQUIRE(ret == SQL_SUCCESS);
+
+  CHECK(sqltables_get_column(stmt_handle(), 1).is_present());
+  CHECK(sqltables_get_column(stmt_handle(), 2).is_null());
+  CHECK(sqltables_get_column(stmt_handle(), 3).is_null());
+  CHECK(sqltables_get_column(stmt_handle(), 4).is_null());
+}
+
+// The SQL_ALL_SCHEMAS sentinel (catalog="", schema="%", table="") is
 // not tested: it is account-wide by spec, so the driver issues SHOW SCHEMAS IN
 // ACCOUNT. On the larger shared CI accounts that enumeration is non-deterministic
 // and can time out or exceed result limits, and ODBC's SQLTables has no

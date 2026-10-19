@@ -9,6 +9,7 @@ Changes:
 Bug fixes:
 
 - Fixed `SQLDriverConnect` so `ODBC_QUERY_RESULT_FORMAT` is sent to the server and selects the session query result format.
+- Fixed `SQLTables` so the `SQL_ALL_CATALOGS` and `SQL_ALL_SCHEMAS` listings return the account's catalogs or schemas when `TableType` is null or any other value, instead of an empty result.
 
 ## v4.1.0
 
