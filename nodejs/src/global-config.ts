@@ -1,7 +1,7 @@
 import { XMLParser, XMLValidator, X2jOptions } from 'fast-xml-parser';
 import ErrorCode from './constants/ErrorCode.js';
 import ErrorMessage from './constants/ErrorMessage.js';
-import { CoreSetCustomCredentialManager } from './core/index.js';
+import { coreSetCustomCredentialManager } from './core/index.js';
 import { invalidParameterError } from './error.js';
 
 export type CustomParser = (rawColumnValue: string) => any;
@@ -157,16 +157,16 @@ export const GlobalConfig: ResolvedConfig = {
   ...buildDefaults(),
 };
 
-export function updateGlobalConfig({
-  customCredentialManager,
-  ...options
-}: Partial<ConfigureOptions>) {
+export function updateGlobalConfig({ customCredentialManager, ...options }: ConfigureOptions) {
   if (customCredentialManager != null) {
     setCustomCredentialManager(customCredentialManager);
   }
   Object.assign(GlobalConfig, options);
 }
 
+// TODO:
+// - entire thing can live in nodejs_bridge including CustomCredentialManager
+// - remove validation and trust TypeScript
 function setCustomCredentialManager(manager: CustomCredentialManager) {
   const isValid =
     typeof manager === 'object' &&
@@ -177,7 +177,7 @@ function setCustomCredentialManager(manager: CustomCredentialManager) {
     const code = ErrorCode.ERR_GLOBAL_CONFIGURE_INVALID_CUSTOM_CREDENTIAL_MANAGER;
     throw invalidParameterError(ErrorMessage[code], code);
   }
-  CoreSetCustomCredentialManager({
+  coreSetCustomCredentialManager({
     read: async (key) => manager.read(key),
     write: async (key, token) => {
       await manager.write(key, token);
@@ -190,5 +190,5 @@ function setCustomCredentialManager(manager: CustomCredentialManager) {
 
 export const resetGlobalConfig = () => {
   Object.assign(GlobalConfig, buildDefaults());
-  CoreSetCustomCredentialManager(null);
+  coreSetCustomCredentialManager(null);
 };

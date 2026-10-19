@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { toCoreConnectionOptions } from '../../src/connection-option-aliases.js';
-import { createConnection } from '../../src/index.js';
+import { createConnection } from '../../src/connection.js';
 
 describe('toCoreConnectionOptions', () => {
   it('maps camelCase driver options onto their sf_core snake_case keys', () => {

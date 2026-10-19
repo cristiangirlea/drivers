@@ -46,15 +46,24 @@ function getCore(): typeof CoreBinary {
 }
 
 const core = getCore();
+
+// Users get these from the package exactly as is, under the same names.
+// A change to them in the native core changes the public API of the package.
+export const getFipsStatus = core.getFipsStatus;
+export type FipsStatus = CoreBinary.FipsStatus;
+export type QueryStatus = CoreBinary.QueryStatus;
+export type StatementStatus = CoreBinary.StatementStatus;
+
+// Everything below is only for use inside the driver.
+// Names must start with `Core` or `core`, so they are not confused with the public names above.
 export const CoreConnection = core.Connection;
 export const CoreStatement = core.Statement;
-export const registerClassConstructors = core.registerClassConstructors;
+export const coreRegisterClassConstructors = core.registerClassConstructors;
 export const CoreColumn = core.Column;
 export const coreFormatSnowflakeDate = core.formatSnowflakeDate;
 export const CoreSessionState = core.SessionState;
 export const CoreQueryBindingFormat = core.QueryBindingFormat;
-export const CoreSetCustomCredentialManager = core.setCustomCredentialManager;
-export const coreGetFipsStatus = core.getFipsStatus;
+export const coreSetCustomCredentialManager = core.setCustomCredentialManager;
 
 export type CoreConnectionInstance = InstanceType<typeof CoreConnection>;
 export type CoreStatementInstance = InstanceType<typeof CoreStatement>;
@@ -62,7 +71,4 @@ export type CoreColumnInstance = InstanceType<typeof CoreColumn>;
 export type CoreSessionStateInstance = InstanceType<typeof CoreSessionState>;
 export type CoreQueryBindings = CoreBinary.QueryBindings;
 export type CoreKnownSessionParameters = CoreBinary.KnownSessionParameters;
-export type QueryStatus = CoreBinary.QueryStatus;
 export type ConnectionTokenInfo = CoreBinary.ConnectionTokenInfo;
-export type CoreFipsStatus = CoreBinary.FipsStatus;
-export type StatementStatus = CoreBinary.StatementStatus;
