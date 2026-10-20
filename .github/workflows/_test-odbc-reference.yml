@@ -92,6 +92,10 @@ jobs:
           mode: restore
           kind: brew
 
+      - name: Install ccache
+        if: matrix.os == 'windows-latest'
+        uses: ./.github/actions/install-ccache-windows
+
       - name: Install build prerequisites (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
@@ -105,7 +109,6 @@ jobs:
           Invoke-Checked "python -m pip install cmake" { python -m pip install cmake>=4.0.3 }
           cmake --version
 
-          Invoke-Checked "choco install ccache" { choco install ccache -y --no-progress }
           New-Item -ItemType Directory -Force -Path $env:CCACHE_DIR | Out-Null
           # VCPKG_BINARY_SOURCES (workflow-level env) points at this directory;
           # vcpkg refuses to use a missing path silently — create it before install.

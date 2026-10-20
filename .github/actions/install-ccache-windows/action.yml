@@ -1,0 +1,57 @@
+name: Install pinned ccache on Windows
+description: >
+  Download a checksum-pinned official ccache Windows zip from GitHub
+  Releases. GitHub-hosted runners cannot reach Artifactory, and
+  Chocolatey's community feed 499s (SNOW-4333024), so this does not
+  use either. Host arch only: x64/x86 jobs run on windows-latest
+  (x86_64 zip); ARM64 jobs use the aarch64 zip.
+
+runs:
+  using: composite
+  steps:
+    - name: Download and install ccache
+      shell: pwsh
+      env:
+        CCACHE_VERSION: "4.14.2"
+        # SHA256 of the official GitHub Release zips for v4.14.2.
+        CCACHE_SHA256_X86_64: "6993ce645e53192cec592ee23186200b574ac4c59097ecde8d9cfd681b47ae84"
+        CCACHE_SHA256_AARCH64: "47ea5a0ed661bea53962d8fb8ee9a1769092d979a6f7c73d3081499b3305b2ab"
+      run: |
+        $ErrorActionPreference = "Stop"
+        $zipArch = if ($env:RUNNER_ARCH -eq "ARM64") { "windows-aarch64" } else { "windows-x86_64" }
+        $expected = if ($zipArch -eq "windows-aarch64") {
+            $env:CCACHE_SHA256_AARCH64
+        } else {
+            $env:CCACHE_SHA256_X86_64
+        }
+        $asset = "ccache-$($env:CCACHE_VERSION)-$zipArch.zip"
+        $url = "https://github.com/ccache/ccache/releases/download/v$($env:CCACHE_VERSION)/$asset"
+        $dest = Join-Path $env:RUNNER_TEMP "ccache-install"
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        $zip = Join-Path $dest $asset
+
+        $downloaded = $false
+        foreach ($attempt in 1..4) {
+            Write-Host "Downloading $url (attempt $attempt/4)"
+            & curl.exe -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o $zip $url
+            if ($LASTEXITCODE -eq 0) { $downloaded = $true; break }
+            Write-Host "ccache download failed (attempt $attempt, exit $LASTEXITCODE); retrying in 15s"
+            Start-Sleep -Seconds 15
+        }
+        if (-not $downloaded) { throw "Failed to download $asset after 4 attempts" }
+
+        $actual = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLowerInvariant()
+        if ($actual -ne $expected.ToLowerInvariant()) {
+            throw "ccache zip SHA256 mismatch: expected $expected, got $actual"
+        }
+
+        Expand-Archive -Path $zip -DestinationPath $dest -Force
+        $exe = Get-ChildItem -Path $dest -Filter ccache.exe -Recurse |
+            Select-Object -First 1
+        if (-not $exe) { throw "ccache.exe missing from $asset" }
+        $binDir = $exe.DirectoryName
+        $binDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        $env:PATH = "$binDir;$env:PATH"
+        Write-Host "Installed $($exe.FullName)"
+        & ccache --version
+        if ($LASTEXITCODE -ne 0) { throw "ccache --version failed with exit code $LASTEXITCODE" }
