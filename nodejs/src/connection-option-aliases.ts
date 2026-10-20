@@ -101,11 +101,26 @@ export function toCoreConnectionOptions(options: Record<string, unknown>): Recor
     }
     normalized[sfCoreKey] = String(value);
   }
-  // Old Node ignored tokenFilePath when token was set. sf_core uses the file
-  // whenever token_file_path is present. Drop the file path here so Node
-  // callers keep the old order. Do not treat that core default as a Node BD.
-  if (normalized.token) {
-    delete normalized.token_file_path;
-  }
+  applyNodeTokenOverrides(normalized);
   return normalized;
+}
+
+function applyNodeTokenOverrides(normalized: Record<string, string>): void {
+  if (normalized.token) {
+    // Backward compatibility. An inline token wins over tokenFilePath
+    // (sf_core prefers the file).
+    delete normalized.token_file_path;
+  } else if (
+    // Backward compatibility with the old Node driver: unlike other drivers,
+    // it accepted PROGRAMMATIC_ACCESS_TOKEN with only a password and sent that
+    // value as TOKEN, not also as password. sf_core requires token or
+    // token_file_path, but never validates the value, so its errors and logs
+    // remain accurate.
+    normalized.authenticator?.toUpperCase() === 'PROGRAMMATIC_ACCESS_TOKEN' &&
+    !normalized.token_file_path &&
+    normalized.password
+  ) {
+    normalized.token = normalized.password;
+    delete normalized.password;
+  }
 }

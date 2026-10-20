@@ -219,6 +219,30 @@ describe('toCoreConnectionOptions', () => {
     );
   });
 
+  it('should copy a PAT password into token when token and tokenFilePath are absent', () => {
+    expect(
+      toCoreConnectionOptions({
+        authenticator: 'PROGRAMMATIC_ACCESS_TOKEN',
+        password: 'pat-secret',
+      }),
+    ).toEqual({
+      authenticator: 'PROGRAMMATIC_ACCESS_TOKEN',
+      token: 'pat-secret',
+    });
+
+    expect(
+      toCoreConnectionOptions({
+        authenticator: 'programmatic_access_token',
+        password: 'pat-secret',
+        token: 'inline',
+      }),
+    ).toEqual({
+      authenticator: 'programmatic_access_token',
+      password: 'pat-secret',
+      token: 'inline',
+    });
+  });
+
   it('should map connectionName onto connection_name', () => {
     expect(toCoreConnectionOptions({ connectionName: 'fromFile' })).toEqual({
       connection_name: 'fromFile',

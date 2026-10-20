@@ -155,23 +155,16 @@ describe('tests/definitions/shared/authentication/PAT.feature', () => {
 });
 
 describe('PAT authenticator with the secret only in password', () => {
-  it('connects on the old driver and rejects a missing token on the new driver', async () => {
+  it('should connect when the PAT is only in password', async () => {
     const connection = createPatConnection({
       authenticator: 'PROGRAMMATIC_ACCESS_TOKEN',
       password: PAT_SECRET,
     });
 
-    if (isRunningNewDriverWithBD('BD#111')) {
-      await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject({
-        name: 'InvalidParameterError',
-        message: expect.stringContaining("Missing required parameter 'token'"),
-      });
-    } else {
-      await connection.connectAsync();
-      destroyConnectionAfterTest(connection);
-      expect(connection.isUp()).toBe(true);
-      await verifySimpleQuery(connection);
-    }
+    await connection.connectAsync();
+    destroyConnectionAfterTest(connection);
+    expect(connection.isUp()).toBe(true);
+    await verifySimpleQuery(connection);
   });
 });
 
