@@ -98,6 +98,20 @@ GRANT MODIFY PROGRAMMATIC AUTHENTICATION METHODS ON USER test_universal TO ROLE 
 GRANT OWNERSHIP ON SCHEMA testdb_universal.public TO ROLE testrole_universal COPY CURRENT GRANTS;
 
 -- ---------------------------------------------------------------------------
+-- Performance database
+-- ---------------------------------------------------------------------------
+-- Performance scenarios read SNOWFLAKE_SAMPLE_DATA.TPCH_SF100 from the share
+-- above. They also connect as testrole_universal_perf to testdb_universal_perf.
+-- PUT/GET creates temporary stages in that database, and binding tests create
+-- temporary tables in PUBLIC.
+CREATE ROLE IF NOT EXISTS testrole_universal_perf;
+
+CREATE DATABASE IF NOT EXISTS testdb_universal_perf;
+GRANT OWNERSHIP ON DATABASE testdb_universal_perf TO ROLE testrole_universal_perf;
+GRANT USAGE ON DATABASE testdb_universal_perf TO ROLE testrole_universal_perf;
+GRANT OWNERSHIP ON SCHEMA testdb_universal_perf.public TO ROLE testrole_universal_perf COPY CURRENT GRANTS;
+
+-- ---------------------------------------------------------------------------
 -- Allow testrole_universal to create databases (required by ODBC setup scripts)
 -- ---------------------------------------------------------------------------
 GRANT CREATE DATABASE ON ACCOUNT TO ROLE testrole_universal;
