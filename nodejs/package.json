@@ -1,6 +1,9 @@
 {
   "name": "snowflake-sdk",
   "version": "4.0.0-alpha.0",
+  "publishConfig": {
+    "tag": "alpha"
+  },
   "description": "Node.js driver for Snowflake",
   "main": "./dist/index.js",
   "typings": "./dist/index.d.ts",
