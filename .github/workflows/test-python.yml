@@ -477,7 +477,9 @@ jobs:
         include: ${{ fromJSON(needs.load-python-matrix.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     name: python_tests ${{ matrix.hatch_env }} (${{ matrix.os }}, py${{ matrix.py }}, ${{ matrix.cloud_provider }}${{ matrix.result_format && format(', {0}', matrix.result_format) || '' }})
-    timeout-minutes: ${{ contains(matrix.os, 'windows') && 60 || 30 }}
+    # Sdist rows compile the core during install, so they get a longer limit
+    # than a cell that installs a prebuilt wheel.
+    timeout-minutes: ${{ matrix.wheel_artifact && (contains(matrix.os, 'windows') && 60 || 30) || 90 }}
     env:
       MATRIX_KEY: ${{ matrix.os }}-${{ matrix.py }}-${{ matrix.hatch_env }}-${{ matrix.cloud_provider }}${{ matrix.result_format && format('-{0}', matrix.result_format) || '' }}
       CLOUD_PROVIDER: ${{ matrix.cloud_provider }}
@@ -492,6 +494,13 @@ jobs:
           fi
 
       - uses: actions/checkout@v7
+
+      # An extension that is not free-threading compatible re-enables the GIL
+      # on import. PYTHON_GIL=0 keeps a 3.14t suite running with the GIL off.
+      - name: Keep the GIL disabled on free-threaded CPython
+        if: endsWith(matrix.py, 't')
+        shell: bash
+        run: echo "PYTHON_GIL=0" >> "$GITHUB_ENV"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1

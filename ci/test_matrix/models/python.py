@@ -4,7 +4,7 @@ PARAMS = {
     "OS":        ["ubuntu", "macos", "windows"],
     "Arch":      ["x64", "arm"],
     "Cloud":     ["aws", "gcp", "azure"],
-    "PyVersion": ["3.11", "3.12", "3.13", "3.14"],
+    "PyVersion": ["3.11", "3.12", "3.13", "3.14", "3.14t"],
     "HatchEnv":  ["test", "test-pandas", "test-native-arrow"],
 }
 
@@ -17,6 +17,7 @@ _CLOUD_FOR_PY = {
     "3.12": "azure",
     "3.13": "aws",
     "3.14": "gcp",
+    "3.14t": "aws",
 }
 
 
@@ -27,13 +28,22 @@ def is_valid(c):
         # runner (no Arrow C++ libs).
         if c["HatchEnv"] == "test-pandas": return False
 
-    # One Linux/py3.13/aws cell runs the full suite with use_core_arrow.
-    # Other combos would multiply nightly cost.
+    # Ubuntu x64 AWS runs the full suite with use_core_arrow for 3.13 and
+    # 3.14t. Other combos would multiply nightly cost.
     if c["HatchEnv"] == "test-native-arrow":
-        if c["OS"] != "ubuntu":      return False
-        if c["Arch"] != "x64":       return False
-        if c["Cloud"] != "aws":      return False
-        if c["PyVersion"] != "3.13": return False
+        if c["OS"] != "ubuntu":                      return False
+        if c["Arch"] != "x64":                       return False
+        if c["Cloud"] != "aws":                      return False
+        if c["PyVersion"] not in ("3.13", "3.14t"):  return False
+
+    # 3.14t installs from the sdist. The Ubuntu x64 AWS `test` and
+    # `test-native-arrow` cells are the only valid combos; the other
+    # platforms have no free-threaded wheel.
+    if c["PyVersion"] == "3.14t":
+        if c["OS"] != "ubuntu":                                 return False
+        if c["Arch"] != "x64":                                  return False
+        if c["Cloud"] != "aws":                                 return False
+        if c["HatchEnv"] not in ("test", "test-native-arrow"):  return False
 
     # Cloud rotation: each Python version is tested against one cloud.
     if c["Cloud"] != _CLOUD_FOR_PY[c["PyVersion"]]:
@@ -75,6 +85,8 @@ PR_CELLS = [
     {"OS": "ubuntu",  "Arch": "x64", "Cloud": "aws", "PyVersion": "3.13", "HatchEnv": "test"},
     {"OS": "ubuntu",  "Arch": "x64", "Cloud": "aws", "PyVersion": "3.13", "HatchEnv": "test-native-arrow"},
     {"OS": "windows", "Arch": "x64", "Cloud": "gcp", "PyVersion": "3.14", "HatchEnv": "test"},
+    {"OS": "ubuntu",  "Arch": "x64", "Cloud": "aws", "PyVersion": "3.14t", "HatchEnv": "test"},
+    {"OS": "ubuntu",  "Arch": "x64", "Cloud": "aws", "PyVersion": "3.14t", "HatchEnv": "test-native-arrow"},
 ]
 
 MERGE_QUEUE_CELLS = [

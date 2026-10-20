@@ -1029,6 +1029,16 @@ class PythonMatrixTests(unittest.TestCase):
         ]
         self.assertEqual(offenders, [])
 
+    def test_freethreading_pr_cell_installs_from_sdist(self) -> None:
+        by_env = {r["hatch_env"]: r for r in self.gha if r["py"] == "3.14t"}
+        self.assertEqual(set(by_env), {"test", "test-native-arrow"})
+        for row in by_env.values():
+            self.assertEqual(row["os"], "ubuntu-latest")
+            self.assertEqual(row["cloud_provider"], "aws")
+            self.assertEqual(row["trigger_level"], "pr")
+            self.assertNotIn("wheel_artifact", row)
+            self.assertIn(row, gm.filter_active(self.gha, "pr"))
+
     def test_no_python_310(self) -> None:
         offenders = [r for r in self.gha if r["py"] == "3.10"]
         self.assertEqual(
@@ -1162,23 +1172,24 @@ class PythonMatrixTests(unittest.TestCase):
         )
 
     def test_native_arrow_is_one_linux_cell(self) -> None:
-        # One ubuntu/x64/aws/py3.13 cell runs the full suite with
-        # use_core_arrow. Do not cartesian-product it across nightly.
+        # Ubuntu x64 AWS runs the full suite with use_core_arrow for 3.13
+        # and 3.14t. 3.13 is also on the merge queue.
         native = [r for r in self.gha if r["hatch_env"] == "test-native-arrow"]
-        self.assertTrue(native, "expected a test-native-arrow cell in the python matrix")
+        self.assertEqual(sorted(r["py"] for r in native), ["3.13", "3.14t"])
         for r in native:
             self.assertEqual(r["os"], "ubuntu-latest", r["name"])
-            self.assertEqual(r["py"], "3.13", r["name"])
             self.assertEqual(r["cloud_provider"], "aws", r["name"])
+            self.assertEqual(r["trigger_level"], "pr", r["name"])
             self.assertIsNone(r.get("result_format"), r["name"])
-        pr_native = [r for r in native if r["trigger_level"] == "pr"]
-        self.assertEqual(len(pr_native), 1, [r["name"] for r in pr_native])
-        self.assertTrue(pr_native[0].get("merge_queue_cell"))
+        py313 = next(r for r in native if r["py"] == "3.13")
+        self.assertTrue(py313.get("merge_queue_cell"))
+        py314t = next(r for r in native if r["py"] == "3.14t")
+        self.assertFalse(py314t.get("merge_queue_cell"))
         mq_native = [
             r for r in gm.filter_active(self.gha, "merge_queue")
             if r["hatch_env"] == "test-native-arrow"
         ]
-        self.assertEqual(len(mq_native), 1, [r["name"] for r in mq_native])
+        self.assertEqual([r["py"] for r in mq_native], ["3.13"])
 
     def test_no_duplicate_macos_rows_at_push_to_main(self) -> None:
         # Regression test for the python.py MERGE_VALID/PR_CELLS sync invariant.

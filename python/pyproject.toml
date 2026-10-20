@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "editables", "Cython", "setuptools", "mypy-protobuf~=5.0"]
+requires = ["hatchling", "editables", "Cython>=3.1", "setuptools", "mypy-protobuf~=5.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -290,7 +290,7 @@ fix = [
 skip-install = false
 dev-mode = true
 dependencies = [
-    "Cython",
+    "Cython>=3.1",
     "setuptools",
 ]
 
@@ -324,7 +324,7 @@ skip-install = true
 dev-mode = false
 
 [[tool.hatch.envs.test.matrix]]
-python = ["3.11", "3.12", "3.13", "3.14"]
+python = ["3.11", "3.12", "3.13", "3.14", "3.14t"]
 
 [tool.hatch.envs.test.scripts]
 # Install from wheel
@@ -346,7 +346,7 @@ no_mfa = "pytest tests/e2e/authentication/test_user_password.py -m requires_no_m
 template = "test"
 
 [[tool.hatch.envs.test-native-arrow.matrix]]
-python = ["3.13"]
+python = ["3.13", "3.14t"]
 
 [tool.hatch.envs.test-native-arrow.env-vars]
 SNOWFLAKE_TEST_USE_CORE_ARROW = "1"

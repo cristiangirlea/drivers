@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import sys
+import sysconfig
 
 from typing import Any
 from urllib.parse import urlparse
@@ -36,7 +37,23 @@ def isolate_application_detection(monkeypatch):
     return monkeypatch
 
 
+def _fail_if_freethreaded_gil_is_enabled() -> None:
+    """Exit when a free-threaded build is running with the GIL enabled.
+
+    ``Py_GIL_DISABLED`` identifies the build. ``sys._is_gil_enabled()`` is the
+    runtime state, which an imported extension can flip back on.
+    """
+    if not bool(sysconfig.get_config_var("Py_GIL_DISABLED")):
+        return
+    if hasattr(sys, "_is_gil_enabled") and sys._is_gil_enabled():
+        pytest.exit(
+            "Free-threaded CPython has the GIL enabled. Set PYTHON_GIL=0 so this suite runs without the GIL.",
+            returncode=1,
+        )
+
+
 def pytest_configure(config):
+    _fail_if_freethreaded_gil_is_enabled()
     # scripts/ is not a Python package (no __init__.py, not on sys.path), so
     # load setup_local_reg.py by file path via importlib. bootstrap() is a
     # no-op unless SNOWFLAKE_TEST_HOST points at a *.reg.local instance.
