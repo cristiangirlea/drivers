@@ -17,6 +17,7 @@ const CONNECTION_OPTION_ALIASES: Record<string, string> = {
   password: 'password',
   authenticator: 'authenticator',
   token: 'token',
+  tokenFilePath: 'token_file_path',
   clientStoreTemporaryCredential: 'client_store_temporary_credential',
   oauthClientId: 'oauth_client_id',
   oauthClientSecret: 'oauth_client_secret',
@@ -99,6 +100,12 @@ export function toCoreConnectionOptions(options: Record<string, unknown>): Recor
       continue;
     }
     normalized[sfCoreKey] = String(value);
+  }
+  // Old Node ignored tokenFilePath when token was set. sf_core uses the file
+  // whenever token_file_path is present. Drop the file path here so Node
+  // callers keep the old order. Do not treat that core default as a Node BD.
+  if (normalized.token) {
+    delete normalized.token_file_path;
   }
   return normalized;
 }

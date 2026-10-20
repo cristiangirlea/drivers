@@ -2410,3 +2410,49 @@ behavior_differences:
     description: |
       should reject an empty password branches on this entry. Omitted and
       undefined passwords stay on BD#101. This test does not assert sqlState.
+
+  127:
+    name: 'empty PAT token file fails at connect with Token file is empty'
+    status: allowed
+    type: bugfix
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      createConnection with authenticator PROGRAMMATIC_ACCESS_TOKEN, an empty
+      tokenFilePath, and no token throws a message containing
+      "Missing token value in".
+    new_driver_behavior: |
+      createConnection accepts the same options. connect rejects with
+      InvalidParameterError and a message containing "Token file is empty".
+      error.code is undefined.
+    description: |
+      The file is read in both drivers. The new driver reports the core error
+      at connect. Neither message is changed.
+    status_rationale: |
+      The old driver throws a plain Error and does not give this failure an
+      error name or a code. Naming it InvalidParameterError is a bugfix of
+      that gap. is_breaking_change stays true because the error class changes.
+
+  128:
+    name: 'missing PAT token file fails at connect with Could not read token file'
+    status: allowed
+    type: bugfix
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      createConnection with authenticator PROGRAMMATIC_ACCESS_TOKEN, a
+      tokenFilePath that does not exist, and no token throws a message
+      containing "Failed to read the token from file".
+    new_driver_behavior: |
+      createConnection accepts the same options. connect rejects with
+      InvalidParameterError and a message containing "Could not read token file".
+      error.code is undefined.
+    description: |
+      A missing path is not the empty-file case. The new driver reports the
+      core read error at connect. Neither message is changed.
+    status_rationale: |
+      The old driver throws a plain Error and does not give this failure an
+      error name or a code. Naming it InvalidParameterError is a bugfix of
+      that gap. is_breaking_change stays true because the error class changes.

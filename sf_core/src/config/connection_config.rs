@@ -1364,6 +1364,25 @@ mod tests {
     }
 
     #[test]
+    fn build_password_auth_does_not_open_token_file_path() {
+        let mut settings = minimal_password_settings();
+        settings.insert("authenticator".into(), Setting::String("SNOWFLAKE".into()));
+        settings.insert(
+            "token_file_path".into(),
+            Setting::String("/no/such/pat-token-file".into()),
+        );
+
+        let config = ConnectionConfig::build(&settings).unwrap();
+        match &config.auth {
+            AuthConfig::Password { user, password, .. } => {
+                assert_eq!(user, "myuser");
+                assert_eq!(password.reveal(), "mypassword");
+            }
+            other => panic!("Expected Password auth, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn build_missing_account_fails() {
         let settings = settings_from(&[
             ("user", Setting::String("u".into())),
