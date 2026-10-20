@@ -1475,18 +1475,20 @@ behavior_differences:
       `connection.session_id` after login still returns the server-assigned id.
 
   99:
-    name: "disable_console_login default flipped"
+    name: "disable_console_login is not a connection parameter"
     status: unknown
     type: api_incompatibility
     reviewed: false
     is_breaking_change: true
-    impact: medium
+    impact: low
     old_driver_behavior: |
       `disable_console_login` defaults to `True`, so EXTERNALBROWSER asks GS for
-      the SSO URL instead of opening the console-login URL.
+      the SSO URL instead of opening the console-login URL. `False` opens
+      `{host}/console/login` directly.
     new_driver_behavior: |
-      `oauth_disable_console_login` defaults to `False`. Omitting the parameter
-      enables console login. The old name still maps to the new one.
+      `disable_console_login` and `oauth_disable_console_login` are not
+      connection parameters. Passing either warns and has no effect.
+      EXTERNALBROWSER always requests the SSO URL from Snowflake.
 
   100:
     name: "password_callback connect parameter removed"

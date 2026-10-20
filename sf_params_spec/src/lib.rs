@@ -175,7 +175,6 @@ pub mod param_names {
     pub const OAUTH_DISABLE_PKCE: ParamKey = ParamKey("oauth_disable_pkce");
     pub const OAUTH_ENABLE_DPOP: ParamKey = ParamKey("oauth_enable_dpop");
     pub const OAUTH_CREDENTIALS_IN_BODY: ParamKey = ParamKey("oauth_credentials_in_body");
-    pub const OAUTH_DISABLE_CONSOLE_LOGIN: ParamKey = ParamKey("oauth_disable_console_login");
     // Logout configuration
     pub const SERVER_SESSION_KEEP_ALIVE: ParamKey = ParamKey("server_session_keep_alive");
     pub const ENABLE_SERVER_SESSION_KEEP_ALIVE_AUTO_DETECTION: ParamKey =
@@ -1417,16 +1416,6 @@ static PARAM_DEFS: &[ParamDef] = &[
         .sensitive(false)
         .auth(true)
         .description("Send client_id/client_secret in the OAUTH_CLIENT_CREDENTIALS token request body (client_secret_post) instead of the HTTP Basic header")
-        .scopes(&[ParamScope::Connection])
-        .mutable_after_connect(false)
-        .build(),
-    ParamDef::builder()
-        .canonical_name(param_names::OAUTH_DISABLE_CONSOLE_LOGIN.as_str())
-        .value_type(ValueType::Bool)
-        .default(DefaultValue::Bool(false))
-        .sensitive(false)
-        .auth(true)
-        .description("Disable EXTERNALBROWSER console-login (JDBC parity; does not gate OAuth)")
         .scopes(&[ParamScope::Connection])
         .mutable_after_connect(false)
         .build(),

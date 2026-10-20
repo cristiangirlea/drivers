@@ -120,11 +120,6 @@ class TestFromKwargs:
             config = ConnectionConfig.from_kwargs(external_browser_timeout=30)
         assert config.authentication_timeout == 30
 
-    def test_legacy_rewrite_disable_console_login(self):
-        with pytest.warns(DeprecationWarning, match="disable_console_login"):
-            config = ConnectionConfig.from_kwargs(disable_console_login=True)
-        assert config.oauth_disable_console_login is True
-
     def test_legacy_rewrite_client_request_mfa_token(self):
         with pytest.warns(DeprecationWarning, match="client_request_mfa_token"):
             config = ConnectionConfig.from_kwargs(client_request_mfa_token=True)
@@ -190,6 +185,8 @@ class TestFromKwargs:
             "snowflake_server_dop_cap_for_file_transfer",
             "reraise_error_in_file_transfer_work_function",
             "iobound_tpe_limit",
+            "disable_console_login",
+            "oauth_disable_console_login",
         ],
     )
     def test_dropped_legacy_kwargs_warn_and_are_not_forwarded(self, legacy_kwarg):

@@ -215,9 +215,6 @@ class ConnectionConfig(ConnectionConfigMixin):
     Default: False
     """
 
-    oauth_disable_console_login: bool | None = False
-    """Disable EXTERNALBROWSER console-login (JDBC parity; does not gate OAuth). Default: False"""
-
     oauth_disable_pkce: bool | None = False
     """Disable PKCE S256 challenge for OAUTH_AUTHORIZATION_CODE (Python-compatible escape hatch). Default: False"""
 
