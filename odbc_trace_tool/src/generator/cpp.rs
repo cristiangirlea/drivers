@@ -262,6 +262,10 @@ fn addr_hex_digits(addr: &str) -> &str {
     &hex[..end]
 }
 
+fn is_sql_drop(call: &crate::model::FreeStmt) -> bool {
+    call.option == Some(1) || call.option_name.as_deref() == Some("SQL_DROP")
+}
+
 fn is_null_addr(addr: &str) -> bool {
     let hex = addr_hex_digits(addr);
     !hex.is_empty() && hex.chars().all(|c| c == '0')
@@ -378,10 +382,187 @@ struct GenContext<'a> {
     /// conflate bind rounds from unrelated statements. Populated in
     /// [`Self::index_bind_runs`].
     bind_run_base: HashMap<usize, i64>,
+    /// Statement allocation generation of each `SQLSetStmtAttr` /
+    /// `SQLBindCol` / `SQLExtendedFetch` call, keyed by its index in `calls`.
+    /// A freed statement's address can come back from a later allocation, so
+    /// the address alone does not identify a statement. Populated in
+    /// [`Self::index_handle_lifetimes`].
+    stmt_generation: HashMap<usize, usize>,
+    /// Largest `SQL_ROWSET_SIZE` / `SQL_ATTR_ROW_ARRAY_SIZE` set during each
+    /// statement generation, including sets that the trace records as failed:
+    /// the replay driver may accept a size the captured driver rejected, and
+    /// an oversized buffer is harmless where an undersized one is overwritten.
+    generation_rowset: HashMap<usize, i64>,
+    /// Handles whose lifetime ends at a call, keyed by that call's index in
+    /// `calls`. Covers successful explicit frees (`SQLFreeHandle`,
+    /// `SQLFreeStmt(SQL_DROP)`) and the statements a successful
+    /// `SQLDisconnect` or parent `SQLFreeHandle` frees implicitly, which the
+    /// trace never logs a free for.
+    released_at: HashMap<usize, Vec<(HandleType, String)>>,
+    /// Number of leading `released_at` indices already applied to
+    /// [`Self::retired`].
+    released_through: usize,
+    /// Addresses whose handle was freed. Their `handle_vars` entry is kept so
+    /// a stale reference in the trace (typically a free after the parent's
+    /// disconnect, recorded as `SQL_INVALID_HANDLE`) replays against the same
+    /// freed variable instead of falling back to an unrelated live handle. The
+    /// next `SQLAllocHandle` at a retired address declares a fresh variable
+    /// rather than collapsing onto the freed one.
+    retired: HashSet<String>,
     /// Index (into `calls`) of the call currently being emitted, so per-call
     /// emitters can consult index-keyed precomputed state like
     /// [`Self::bind_run_base`].
     current_idx: usize,
+}
+
+#[derive(Default)]
+struct HandleLifetimeIndex {
+    next_generation: usize,
+    live_stmt: HashMap<String, usize>,
+    live_dbc: HashMap<String, usize>,
+    stmt_children: HashMap<String, Vec<(String, usize)>>,
+    dbc_children: HashMap<String, Vec<(String, usize)>>,
+    stmt_generation: HashMap<usize, usize>,
+    generation_rowset: HashMap<usize, i64>,
+    released_at: HashMap<usize, Vec<(HandleType, String)>>,
+}
+
+impl HandleLifetimeIndex {
+    fn build(calls: &[OdbcCall]) -> Self {
+        let mut index = Self::default();
+        for (idx, call) in calls.iter().enumerate() {
+            index.record(idx, call);
+        }
+        index
+    }
+
+    fn record(&mut self, idx: usize, call: &OdbcCall) {
+        match call {
+            OdbcCall::AllocHandle(a) if a.return_code.is_success() => {
+                let Some(child) = a.child_handle.as_deref() else {
+                    return;
+                };
+                let parent = a.parent_handle.clone();
+                match a.handle_type {
+                    Some(HandleType::Stmt) => {
+                        let generation = self.open_stmt(child);
+                        if let Some(parent) = parent {
+                            self.stmt_children
+                                .entry(parent)
+                                .or_default()
+                                .push((child.to_string(), generation));
+                        }
+                    }
+                    Some(HandleType::Dbc) => {
+                        let generation = self.next_generation();
+                        self.live_dbc.insert(child.to_string(), generation);
+                        if let Some(parent) = parent {
+                            self.dbc_children
+                                .entry(parent)
+                                .or_default()
+                                .push((child.to_string(), generation));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            OdbcCall::FreeHandle(f) if f.return_code.is_success() => {
+                let Some(addr) = f.handle.as_deref() else {
+                    return;
+                };
+                match f.handle_type {
+                    Some(HandleType::Stmt) => self.end_stmt(idx, addr),
+                    Some(HandleType::Dbc) => self.end_dbc(idx, addr),
+                    Some(HandleType::Env) => {
+                        for (dbc, generation) in self.dbc_children.remove(addr).unwrap_or_default()
+                        {
+                            if self.live_dbc.get(&dbc) == Some(&generation) {
+                                self.end_dbc(idx, &dbc);
+                            }
+                        }
+                        self.release(idx, HandleType::Env, addr);
+                    }
+                    _ => {}
+                }
+            }
+            OdbcCall::FreeStmt(f) if f.return_code.is_success() && is_sql_drop(f) => {
+                if let Some(addr) = f.handle.as_deref() {
+                    self.end_stmt(idx, addr);
+                }
+            }
+            OdbcCall::Disconnect(d) if d.return_code.is_success() => {
+                if let Some(addr) = d.handle.as_deref() {
+                    self.end_dbc_children(idx, addr);
+                }
+            }
+            OdbcCall::SetStmtAttr(s) => {
+                let Some(generation) = self.note_generation(idx, s.handle.as_deref()) else {
+                    return;
+                };
+                if let (Some("SQL_ROWSET_SIZE" | "SQL_ATTR_ROW_ARRAY_SIZE"), Some(value)) =
+                    (s.attribute.as_deref(), s.value)
+                {
+                    let max = self.generation_rowset.entry(generation).or_insert(1);
+                    *max = (*max).max(value);
+                }
+            }
+            OdbcCall::BindCol(b) => {
+                self.note_generation(idx, b.handle.as_deref());
+            }
+            OdbcCall::ExtendedFetch(e) => {
+                self.note_generation(idx, e.handle.as_deref());
+            }
+            _ => {}
+        }
+    }
+
+    fn next_generation(&mut self) -> usize {
+        let generation = self.next_generation;
+        self.next_generation += 1;
+        generation
+    }
+
+    fn open_stmt(&mut self, addr: &str) -> usize {
+        let generation = self.next_generation();
+        self.live_stmt.insert(addr.to_string(), generation);
+        generation
+    }
+
+    fn note_generation(&mut self, idx: usize, addr: Option<&str>) -> Option<usize> {
+        let addr = addr?;
+        let generation = match self.live_stmt.get(addr) {
+            Some(&generation) => generation,
+            None => self.open_stmt(addr),
+        };
+        self.stmt_generation.insert(idx, generation);
+        Some(generation)
+    }
+
+    fn release(&mut self, idx: usize, handle_type: HandleType, addr: &str) {
+        self.released_at
+            .entry(idx)
+            .or_default()
+            .push((handle_type, addr.to_string()));
+    }
+
+    fn end_stmt(&mut self, idx: usize, addr: &str) {
+        self.live_stmt.remove(addr);
+        self.release(idx, HandleType::Stmt, addr);
+    }
+
+    fn end_dbc_children(&mut self, idx: usize, dbc: &str) {
+        for (addr, generation) in self.stmt_children.remove(dbc).unwrap_or_default() {
+            if self.live_stmt.get(&addr) == Some(&generation) {
+                self.end_stmt(idx, &addr);
+            }
+        }
+    }
+
+    fn end_dbc(&mut self, idx: usize, dbc: &str) {
+        self.end_dbc_children(idx, dbc);
+        self.live_dbc.remove(dbc);
+        self.release(idx, HandleType::Dbc, dbc);
+    }
 }
 
 impl<'a> GenContext<'a> {
@@ -411,7 +592,51 @@ impl<'a> GenContext<'a> {
             enum_cursors: HashSet::new(),
             draining: HashSet::new(),
             bind_run_base: HashMap::new(),
+            stmt_generation: HashMap::new(),
+            generation_rowset: HashMap::new(),
+            released_at: HashMap::new(),
+            released_through: 0,
+            retired: HashSet::new(),
             current_idx: 0,
+        }
+    }
+
+    fn index_handle_lifetimes(&mut self) {
+        let index = HandleLifetimeIndex::build(self.calls);
+        self.stmt_generation = index.stmt_generation;
+        self.generation_rowset = index.generation_rowset;
+        self.released_at = index.released_at;
+    }
+
+    fn retire_released_before(&mut self, idx: usize) {
+        while self.released_through < idx {
+            let released = self
+                .released_at
+                .remove(&self.released_through)
+                .unwrap_or_default();
+            for (handle_type, addr) in released {
+                self.retire(handle_type, &addr);
+            }
+            self.released_through += 1;
+        }
+    }
+
+    fn retire(&mut self, handle_type: HandleType, addr: &str) {
+        let prefix = match handle_type {
+            HandleType::Env => "env",
+            HandleType::Dbc => "dbc",
+            HandleType::Stmt => "stmt",
+            HandleType::Desc => return,
+        };
+        if handle_type == HandleType::Stmt {
+            self.clear_enum_cursor(Some(addr));
+        }
+        if self
+            .handle_vars
+            .get(addr)
+            .is_some_and(|var| var.starts_with(prefix))
+        {
+            self.retired.insert(addr.to_string());
         }
     }
 
@@ -470,6 +695,7 @@ impl<'a> GenContext<'a> {
         }
 
         self.index_bind_runs();
+        self.index_handle_lifetimes();
 
         self.emit_header();
         self.emit_test_open();
@@ -478,6 +704,7 @@ impl<'a> GenContext<'a> {
 
         let mut idx = 0;
         while idx < self.calls.len() {
+            self.retire_released_before(idx);
             let call = &self.calls[idx];
             if is_unreplayed_call(call) {
                 idx += 1;
@@ -909,7 +1136,7 @@ impl<'a> GenContext<'a> {
             return;
         };
 
-        if self.handle_vars.contains_key(child) {
+        if self.handle_vars.contains_key(child) && !self.retired.contains(child) {
             return;
         }
 
@@ -921,6 +1148,7 @@ impl<'a> GenContext<'a> {
         };
 
         self.declare_handle(&var_name, ht);
+        self.retired.remove(child);
         self.handle_vars.insert(child.clone(), var_name.clone());
         if ht == HandleType::Env {
             self.unfreed_envs.push(var_name.clone());
@@ -1164,32 +1392,17 @@ impl<'a> GenContext<'a> {
         n
     }
 
-    /// Largest `SQL_ROWSET_SIZE` / `SQL_ATTR_ROW_ARRAY_SIZE` ever set on this
-    /// statement in the trace. Bound-column buffers and row-status arrays are
-    /// sized for this so a block-cursor `SQLExtendedFetch` can never write past
-    /// the end of our buffers (a too-small buffer would corrupt memory / crash).
-    fn max_rowset_for_handle(&self, handle: &Option<String>) -> i64 {
-        let Some(h) = handle.as_deref() else {
-            return 1;
-        };
-        let mut max = 1;
-        for c in self.calls {
-            if let OdbcCall::SetStmtAttr(s) = c {
-                if s.handle.as_deref() == Some(h)
-                    && matches!(
-                        s.attribute.as_deref(),
-                        Some("SQL_ROWSET_SIZE") | Some("SQL_ATTR_ROW_ARRAY_SIZE")
-                    )
-                {
-                    if let Some(v) = s.value {
-                        if v > max {
-                            max = v;
-                        }
-                    }
-                }
-            }
-        }
-        max
+    /// Largest rowset size set during the current call's statement generation,
+    /// including sets after the current call. Bound-column buffers and
+    /// row-status arrays are sized for this so a block-cursor
+    /// `SQLExtendedFetch` can never write past the end of our buffers (a
+    /// too-small buffer would corrupt memory / crash).
+    fn max_rowset_for_current_call(&self) -> i64 {
+        self.stmt_generation
+            .get(&self.current_idx)
+            .and_then(|generation| self.generation_rowset.get(generation))
+            .copied()
+            .unwrap_or(1)
     }
 
     fn emit_bind_col(&mut self, call: &crate::model::BindCol) {
@@ -1229,7 +1442,7 @@ impl<'a> GenContext<'a> {
             return;
         }
 
-        let rowset = self.max_rowset_for_handle(&call.handle).max(1);
+        let rowset = self.max_rowset_for_current_call();
         let elem = call.buffer_length.unwrap_or(0).max(1);
 
         // Row-wise binding: SQL_ATTR_ROW_BIND_TYPE holds a row-struct size, and
@@ -1412,7 +1625,7 @@ impl<'a> GenContext<'a> {
             "SQL_FETCH_NEXT",
         );
         let offset = call.offset.unwrap_or(0);
-        let rowset = self.max_rowset_for_handle(&call.handle).max(1);
+        let rowset = self.max_rowset_for_current_call();
         let n = self.next_bind_buf();
 
         self.writeln("// SQLExtendedFetch");
@@ -1456,20 +1669,6 @@ impl<'a> GenContext<'a> {
         self.indent -= 1;
         self.writeln("}");
         self.writeln("");
-
-        // SQL_DROP (the ODBC 2.x way to free a statement handle) destroys the
-        // handle. Applications routinely allocate a fresh statement afterward
-        // that the driver hands back at the SAME address. Drop the address ->
-        // variable mapping so the next SQLAllocHandle creates a new variable
-        // instead of collapsing onto the freed one (which would replay as
-        // SQL_INVALID_HANDLE). SQL_CLOSE/SQL_UNBIND/SQL_RESET_PARAMS keep the
-        // handle alive, so leave the mapping intact for those.
-        let is_drop = call.option == Some(1) || call.option_name.as_deref() == Some("SQL_DROP");
-        if is_drop {
-            if let Some(addr) = &call.handle {
-                self.handle_vars.remove(addr);
-            }
-        }
     }
 
     fn emit_get_data(&mut self, call: &crate::model::GetData) {
@@ -2217,9 +2416,6 @@ impl<'a> GenContext<'a> {
             .cloned()
             .unwrap_or_else(|| self.default_var_for(ht));
 
-        if let Some(addr) = &call.handle {
-            self.handle_vars.remove(addr);
-        }
         if ht == HandleType::Env {
             self.unfreed_envs.retain(|v| v != &var_name);
         }
@@ -2357,7 +2553,7 @@ impl<'a> GenContext<'a> {
                         format!("&{var}")
                     }
                     PointerAttrKind::UsmallintArray => {
-                        let rowset = self.max_rowset_for_handle(&call.handle).max(1);
+                        let rowset = self.max_rowset_for_current_call();
                         self.writeln(&format!("std::vector<SQLUSMALLINT> {var}({rowset}, 0);"));
                         format!("{var}.data()")
                     }
@@ -2570,19 +2766,20 @@ impl<'a> GenContext<'a> {
     }
 
     fn first_env_var(&self) -> String {
-        self.handle_vars
-            .values()
-            .find(|v| v.starts_with("env"))
-            .cloned()
+        self.first_live_var("env")
             .unwrap_or_else(|| "env0".to_string())
     }
 
     fn first_dbc_var(&self) -> String {
-        self.handle_vars
-            .values()
-            .find(|v| v.starts_with("dbc"))
-            .cloned()
+        self.first_live_var("dbc")
             .unwrap_or_else(|| "dbc0".to_string())
+    }
+
+    fn first_live_var(&self, prefix: &str) -> Option<String> {
+        self.handle_vars
+            .iter()
+            .find(|(addr, var)| var.starts_with(prefix) && !self.retired.contains(*addr))
+            .map(|(_, var)| var.clone())
     }
 
     fn default_parent_var(&self, ht: HandleType) -> String {
@@ -2967,6 +3164,292 @@ mod tests {
             ),
             "bind call; output:\n{output}"
         );
+    }
+
+    #[test]
+    fn test_bind_col_rowset_is_scoped_to_one_allocation_of_a_reused_address() {
+        use crate::model::{
+            AllocHandle, BindCol, FreeHandle, HandleType, OdbcCall, ReturnCode, SetStmtAttr,
+        };
+
+        let row_array = |value: i64| {
+            OdbcCall::SetStmtAttr(SetStmtAttr {
+                return_code: ReturnCode::Success,
+                handle: Some("0xstmt".to_string()),
+                attribute: Some("SQL_ATTR_ROW_ARRAY_SIZE".to_string()),
+                value: Some(value),
+                str_len: Some(0),
+            })
+        };
+        let bind = || {
+            OdbcCall::BindCol(BindCol {
+                return_code: ReturnCode::Success,
+                handle: Some("0xstmt".to_string()),
+                column_number: Some(1),
+                target_type: Some(1),
+                target_type_name: Some("SQL_C_CHAR".to_string()),
+                buffer_length: Some(8),
+                target_value_ptr: Some("0x00000000000000A0".to_string()),
+                indicator_ptr: Some("0x0000000000000090".to_string()),
+            })
+        };
+        let alloc = || {
+            OdbcCall::AllocHandle(AllocHandle {
+                return_code: ReturnCode::Success,
+                handle_type: Some(HandleType::Stmt),
+                parent_handle: Some("0xdbc".to_string()),
+                child_handle: Some("0xstmt".to_string()),
+            })
+        };
+        let free = || {
+            OdbcCall::FreeHandle(FreeHandle {
+                return_code: ReturnCode::Success,
+                handle_type: Some(HandleType::Stmt),
+                handle: Some("0xstmt".to_string()),
+            })
+        };
+
+        let calls = vec![
+            alloc(),
+            bind(),
+            row_array(8),
+            free(),
+            alloc(),
+            bind(),
+            free(),
+            alloc(),
+            row_array(64),
+            bind(),
+            free(),
+        ];
+        let output = gen_ado(calls);
+        assert!(
+            output.contains("std::vector<char> bind_buf_0(8 * 8, 0);"),
+            "row-array size set after the bind still sizes it; output:\n{output}"
+        );
+        assert!(
+            output.contains("std::vector<char> bind_buf_1(1 * 8, 0);"),
+            "no row-array size inherited from the allocation before or after; output:\n{output}"
+        );
+        assert!(
+            output.contains("std::vector<char> bind_buf_2(64 * 8, 0);"),
+            "third allocation uses its own row-array size; output:\n{output}"
+        );
+    }
+
+    mod handle_lifetimes {
+        use super::gen_ado;
+        use crate::model::{
+            AllocHandle, BindCol, Disconnect, ExtendedFetch, FreeHandle, FreeStmt, HandleType,
+            OdbcCall, ReturnCode, SetStmtAttr,
+        };
+
+        fn alloc(handle_type: HandleType, parent: &str, child: &str) -> OdbcCall {
+            OdbcCall::AllocHandle(AllocHandle {
+                return_code: ReturnCode::Success,
+                handle_type: Some(handle_type),
+                parent_handle: Some(parent.to_string()),
+                child_handle: Some(child.to_string()),
+            })
+        }
+
+        fn free(handle_type: HandleType, handle: &str, return_code: ReturnCode) -> OdbcCall {
+            OdbcCall::FreeHandle(FreeHandle {
+                return_code,
+                handle_type: Some(handle_type),
+                handle: Some(handle.to_string()),
+            })
+        }
+
+        fn drop_stmt(handle: &str, option: Option<i64>, option_name: Option<&str>) -> OdbcCall {
+            OdbcCall::FreeStmt(FreeStmt {
+                return_code: ReturnCode::Success,
+                handle: Some(handle.to_string()),
+                option,
+                option_name: option_name.map(str::to_string),
+            })
+        }
+
+        fn disconnect(handle: &str, return_code: ReturnCode) -> OdbcCall {
+            OdbcCall::Disconnect(Disconnect {
+                return_code,
+                handle: Some(handle.to_string()),
+            })
+        }
+
+        fn row_array(handle: &str, value: i64) -> OdbcCall {
+            OdbcCall::SetStmtAttr(SetStmtAttr {
+                return_code: ReturnCode::Success,
+                handle: Some(handle.to_string()),
+                attribute: Some("SQL_ATTR_ROW_ARRAY_SIZE".to_string()),
+                value: Some(value),
+                str_len: Some(0),
+            })
+        }
+
+        fn bind(handle: &str) -> OdbcCall {
+            OdbcCall::BindCol(BindCol {
+                return_code: ReturnCode::Success,
+                handle: Some(handle.to_string()),
+                column_number: Some(1),
+                target_type: Some(1),
+                target_type_name: Some("SQL_C_CHAR".to_string()),
+                buffer_length: Some(8),
+                target_value_ptr: Some("0x00000000000000A0".to_string()),
+                indicator_ptr: Some("0x0000000000000090".to_string()),
+            })
+        }
+
+        fn extended_fetch(handle: &str) -> OdbcCall {
+            OdbcCall::ExtendedFetch(ExtendedFetch {
+                return_code: ReturnCode::Success,
+                handle: Some(handle.to_string()),
+                orientation: Some(1),
+                orientation_name: Some("SQL_FETCH_NEXT".to_string()),
+                offset: Some(0),
+                row_count: None,
+            })
+        }
+
+        fn assert_contains(output: &str, needle: &str) {
+            assert!(
+                output.contains(needle),
+                "missing `{needle}`; output:\n{output}"
+            );
+        }
+
+        #[test]
+        fn test_free_stmt_sql_drop_ends_the_rowset_window() {
+            let output = gen_ado(vec![
+                alloc(HandleType::Stmt, "0xdbc", "0xstmt"),
+                bind("0xstmt"),
+                row_array("0xstmt", 8),
+                drop_stmt("0xstmt", None, Some("SQL_DROP")),
+                alloc(HandleType::Stmt, "0xdbc", "0xstmt"),
+                bind("0xstmt"),
+                drop_stmt("0xstmt", Some(1), None),
+                alloc(HandleType::Stmt, "0xdbc", "0xstmt"),
+                row_array("0xstmt", 64),
+                bind("0xstmt"),
+            ]);
+            assert_contains(&output, "std::vector<char> bind_buf_0(8 * 8, 0);");
+            assert_contains(&output, "std::vector<char> bind_buf_1(1 * 8, 0);");
+            assert_contains(&output, "std::vector<char> bind_buf_2(64 * 8, 0);");
+        }
+
+        #[test]
+        fn test_disconnect_ends_child_statements() {
+            let output = gen_ado(vec![
+                alloc(HandleType::Dbc, "0xenv", "0xdbc1"),
+                alloc(HandleType::Stmt, "0xdbc1", "0xstmt"),
+                row_array("0xstmt", 8),
+                bind("0xstmt"),
+                disconnect("0xdbc1", ReturnCode::Success),
+                alloc(HandleType::Stmt, "0xdbc1", "0xstmt"),
+                row_array("0xstmt", 512),
+                bind("0xstmt"),
+            ]);
+            assert_contains(&output, "std::vector<char> bind_buf_0(8 * 8, 0);");
+            assert_contains(&output, "SQLAllocHandle(SQL_HANDLE_STMT, dbc0, &stmt1);");
+            assert_contains(&output, "std::vector<char> bind_buf_1(512 * 8, 0);");
+        }
+
+        #[test]
+        fn test_failed_disconnect_keeps_child_statements_alive() {
+            let output = gen_ado(vec![
+                alloc(HandleType::Dbc, "0xenv", "0xdbc1"),
+                alloc(HandleType::Stmt, "0xdbc1", "0xstmt"),
+                bind("0xstmt"),
+                disconnect("0xdbc1", ReturnCode::Error),
+                row_array("0xstmt", 64),
+            ]);
+            assert_contains(&output, "std::vector<char> bind_buf_0(64 * 8, 0);");
+        }
+
+        #[test]
+        fn test_connection_free_ends_child_statements() {
+            let output = gen_ado(vec![
+                alloc(HandleType::Dbc, "0xenv", "0xdbc1"),
+                alloc(HandleType::Stmt, "0xdbc1", "0xstmt"),
+                row_array("0xstmt", 8),
+                bind("0xstmt"),
+                free(HandleType::Dbc, "0xdbc1", ReturnCode::Success),
+                alloc(HandleType::Dbc, "0xenv", "0xdbc2"),
+                alloc(HandleType::Stmt, "0xdbc2", "0xstmt"),
+                row_array("0xstmt", 512),
+                bind("0xstmt"),
+            ]);
+            assert_contains(&output, "std::vector<char> bind_buf_0(8 * 8, 0);");
+            assert_contains(&output, "SQLAllocHandle(SQL_HANDLE_STMT, dbc1, &stmt1);");
+            assert_contains(&output, "std::vector<char> bind_buf_1(512 * 8, 0);");
+        }
+
+        #[test]
+        fn test_stale_child_entry_does_not_end_a_reused_address() {
+            let output = gen_ado(vec![
+                alloc(HandleType::Dbc, "0xenv", "0xdbc1"),
+                alloc(HandleType::Dbc, "0xenv", "0xdbc2"),
+                alloc(HandleType::Stmt, "0xdbc1", "0xstmt"),
+                free(HandleType::Stmt, "0xstmt", ReturnCode::Success),
+                alloc(HandleType::Stmt, "0xdbc2", "0xstmt"),
+                row_array("0xstmt", 64),
+                bind("0xstmt"),
+                disconnect("0xdbc1", ReturnCode::Success),
+                extended_fetch("0xstmt"),
+            ]);
+            assert_contains(&output, "std::vector<char> bind_buf_0(64 * 8, 0);");
+            assert_contains(
+                &output,
+                "std::vector<SQLUSMALLINT> extfetch_status_1(64, 0);",
+            );
+            assert_contains(&output, "SQLExtendedFetch(stmt1,");
+        }
+
+        #[test]
+        fn test_failed_free_does_not_end_the_rowset_window() {
+            let output = gen_ado(vec![
+                alloc(HandleType::Stmt, "0xdbc", "0xstmt"),
+                bind("0xstmt"),
+                free(HandleType::Stmt, "0xstmt", ReturnCode::Error),
+                row_array("0xstmt", 64),
+            ]);
+            assert_contains(&output, "std::vector<char> bind_buf_0(64 * 8, 0);");
+        }
+
+        #[test]
+        fn test_stale_reference_after_disconnect_keeps_its_variable() {
+            let output = gen_ado(vec![
+                alloc(HandleType::Dbc, "0xenv", "0xdbc1"),
+                alloc(HandleType::Dbc, "0xenv", "0xdbc2"),
+                alloc(HandleType::Stmt, "0xdbc2", "0xlive"),
+                alloc(HandleType::Stmt, "0xdbc1", "0xstale"),
+                disconnect("0xdbc1", ReturnCode::Success),
+                free(HandleType::Stmt, "0xstale", ReturnCode::InvalidHandle),
+            ]);
+            assert_contains(&output, "SQLFreeHandle(SQL_HANDLE_STMT, stmt1);");
+            assert!(
+                !output.contains("SQLFreeHandle(SQL_HANDLE_STMT, stmt0);"),
+                "stale free must not fall back to the live statement; output:\n{output}"
+            );
+        }
+
+        #[test]
+        fn test_free_of_another_handle_type_at_the_same_address_keeps_the_statement() {
+            let output = gen_ado(vec![
+                alloc(HandleType::Stmt, "0xdbc", "0xother"),
+                alloc(HandleType::Stmt, "0xdbc", "0xshared"),
+                bind("0xshared"),
+                free(HandleType::Dbc, "0xshared", ReturnCode::Success),
+                row_array("0xshared", 64),
+                extended_fetch("0xshared"),
+            ]);
+            assert_contains(&output, "std::vector<char> bind_buf_0(64 * 8, 0);");
+            assert_contains(
+                &output,
+                "std::vector<SQLUSMALLINT> extfetch_status_1(64, 0);",
+            );
+            assert_contains(&output, "SQLExtendedFetch(stmt1,");
+        }
     }
 
     #[test]
