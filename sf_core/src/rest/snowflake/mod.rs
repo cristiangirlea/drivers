@@ -986,7 +986,7 @@ pub async fn auth_request_data(
                         &tls_config,
                         Some(&login_parameters.client_info.proxy_config),
                         crl_manager,
-                        roots,
+                        roots.clone(),
                     )
                     .await
                     .context(WifSdkHttpClientSnafu)?,
@@ -995,7 +995,7 @@ pub async fn auth_request_data(
                 None
             };
             let attestation =
-                workload_identity::create_attestation(client, aws_sdk_http.as_ref(), cfg)
+                workload_identity::create_attestation(client, aws_sdk_http.as_ref(), cfg, roots)
                     .await
                     .context(WorkloadIdentityAttestationSnafu)?;
             data.authenticator = Some(authenticator::WORKLOAD_IDENTITY.to_string());

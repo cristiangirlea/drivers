@@ -271,6 +271,7 @@ impl DatabaseDriverV1 {
             None => XpSlot::from_env(providers.xp_backend),
         });
         crate::xp_backend::registry::install_c_registration_target(Arc::clone(&xp_slot));
+        let root_store_provider = providers.root_store_provider.unwrap_or_default();
         Self {
             databases: HandleManager::new(),
             connections: HandleManager::new(),
@@ -283,14 +284,16 @@ impl DatabaseDriverV1 {
                 .map(once_cell::sync::OnceCell::from)
                 .unwrap_or_default(),
             fs: providers.fs.unwrap_or_else(|| Arc::new(RealFs)),
-            platform_detector: PlatformDetector::new(DetectionConfig::default()),
+            platform_detector: PlatformDetector::new(DetectionConfig::new(
+                root_store_provider.clone(),
+            )),
             log_manager: providers.log_manager,
             wrapper_presets: providers.wrapper_presets,
             prompt_locks: providers
                 .prompt_locks
                 .unwrap_or_else(|| Arc::new(std::sync::Mutex::new(HashMap::new()))),
             crl_manager: providers.crl_manager.unwrap_or_default(),
-            root_store_provider: providers.root_store_provider.unwrap_or_default(),
+            root_store_provider,
             xp_slot,
         }
     }
@@ -436,6 +439,23 @@ impl DatabaseDriverV1 {
 mod tests {
     use super::*;
     use crate::xp_backend::TestBackend;
+
+    #[test]
+    fn platform_detector_reuses_the_injected_root_store_provider() {
+        let roots = RootStoreProvider::new();
+        let driver = DatabaseDriverV1::with_providers(DriverProviders {
+            root_store_provider: Some(roots.clone()),
+            ..Default::default()
+        });
+        assert!(
+            roots.ptr_eq(&driver.root_store_provider),
+            "the driver keeps the injected root-store provider"
+        );
+        assert!(
+            roots.ptr_eq(driver.platform_detector.root_store_provider()),
+            "platform detection uses the driver's root-store provider"
+        );
+    }
 
     #[tokio::test]
     async fn platform_detection_stays_idle_without_a_log_manager() {

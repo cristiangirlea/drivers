@@ -48,6 +48,11 @@ impl RootStoreProvider {
         }))
     }
 
+    #[cfg(test)]
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
     pub(crate) fn snapshot(&self) -> RootStoreSnapshot<'_> {
         RootStoreSnapshot {
             provider: self,
@@ -649,16 +654,28 @@ fn build_plain_rustls_client_config(
 
 /// Module-backed config with reqwest's default trust (native ∪ webpki roots)
 /// and no CRL checking, for auxiliary HTTPS clients that have no connection
-/// `TlsConfig`: CRL downloads (where CRL checks would recurse), platform
-/// detection probes and WIF attestation.
-pub(crate) fn default_verified_client_builder() -> Result<ClientBuilder, TlsError> {
-    Ok(apply_http_pool_settings(Client::builder())
-        .use_preconfigured_tls(build_default_verified_rustls_config()?))
+/// `TlsConfig`: platform detection probes and WIF attestation.
+pub(crate) async fn default_verified_client_builder(
+    roots: &RootStoreProvider,
+) -> Result<ClientBuilder, TlsError> {
+    let snapshot = roots
+        .prepare_native_if_needed(&TlsConfig::default())
+        .await?;
+    default_verified_client_builder_from_snapshot(&snapshot)
 }
 
-fn build_default_verified_rustls_config() -> Result<rustls::ClientConfig, TlsError> {
+pub(crate) fn default_verified_client_builder_from_snapshot(
+    roots: &RootStoreSnapshot<'_>,
+) -> Result<ClientBuilder, TlsError> {
+    Ok(apply_http_pool_settings(Client::builder())
+        .use_preconfigured_tls(build_default_verified_rustls_config(roots)?))
+}
+
+fn build_default_verified_rustls_config(
+    roots: &RootStoreSnapshot<'_>,
+) -> Result<rustls::ClientConfig, TlsError> {
     build_verified_rustls_config(
-        RootStoreProvider::new().snapshot().with_bundled()?,
+        roots.with_bundled()?,
         rustls::DEFAULT_VERSIONS,
         true,
         ClientAlpn::Default,
@@ -1060,8 +1077,8 @@ mod tests {
 
     #[test]
     fn default_verified_config_uses_the_module_provider() {
-        let config =
-            build_default_verified_rustls_config().expect("default verified rustls config");
+        let config = build_default_verified_rustls_config(&RootStoreProvider::new().snapshot())
+            .expect("default verified rustls config");
         assert!(Arc::ptr_eq(
             config.crypto_provider(),
             &crate::tls::crypto_module::CryptoModule::get().provider()

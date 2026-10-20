@@ -121,13 +121,14 @@ impl AwsSdkReqwestClient {
     /// The global gate is still checked here because other connection paths
     /// (including insecure TLS) depend on it; unrelated raw clients that
     /// do not call the gate are outside this constructor's guarantee.
-    pub(crate) fn with_default_tls() -> Result<Self, TlsError> {
-        Self::build(
+    pub(crate) async fn with_default_tls(roots: RootStoreProvider) -> Result<Self, TlsError> {
+        Self::build_prepared(
             &TlsConfig::default(),
             None,
             crate::crl::CrlManager::new(),
-            RootStoreProvider::new(),
+            roots,
         )
+        .await
     }
 
     fn finish(builder: reqwest::ClientBuilder) -> Result<Self, TlsError> {

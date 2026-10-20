@@ -350,7 +350,9 @@ impl CrlMetrics {
 }
 
 fn crl_http_client_builder() -> Result<reqwest::ClientBuilder, CrlError> {
-    crate::tls::client::default_verified_client_builder().context(TlsConfigBuildSnafu)
+    let roots = crate::tls::RootStoreProvider::new();
+    crate::tls::client::default_verified_client_builder_from_snapshot(&roots.snapshot())
+        .context(TlsConfigBuildSnafu)
 }
 
 impl CrlCache {

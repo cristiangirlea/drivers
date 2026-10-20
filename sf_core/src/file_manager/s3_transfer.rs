@@ -3667,8 +3667,11 @@ mod tests {
             .credentials_provider(creds)
             .region(Region::new("us-east-1"))
             .http_client(crate::tls::aws_http_client::reqwest_aws_http_client(
-                crate::tls::aws_http_client::AwsSdkReqwestClient::with_default_tls()
-                    .expect("default-TLS SDK client must build"),
+                crate::tls::aws_http_client::AwsSdkReqwestClient::with_default_tls(
+                    crate::tls::RootStoreProvider::new(),
+                )
+                .await
+                .expect("default-TLS SDK client must build"),
             ))
             .load()
             .await;

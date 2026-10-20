@@ -150,6 +150,9 @@ Internal changes:
 - Moved CRL cache and background refresh onto the driver so the last driver drop cancels and joins the `crl-refresh` thread. (snowflakedb/drivers#2429)
 - Keyed telemetry by connection handle instead of session id and added the session id to span entries at send time, so a connection that adopted session tokens without a session id now sends telemetry. (snowflakedb/drivers#2607)
 - Removed OCSP_MODE from the login CLIENT_ENVIRONMENT payload and from connection diagnostics. The driver does not perform OCSP; certificate revocation continues to be reported as CERT_REVOCATION_CHECK_MODE. (snowflakedb/drivers#2724)
+- Changed the platform-detection and Workload Identity attestation clients to reuse the driver's cached system root certificates, and stopped the plain-HTTP IMDS region lookup from loading the OS trust store. (snowflakedb/drivers#2690)
+- Removed the synchronous default-TLS client builder. Auxiliary clients build from a root-store snapshot. (snowflakedb/drivers#2690)
+- Narrowed platform detection's config and entry point to crate visibility. (snowflakedb/drivers#2690)
 
 Test improvements:
 
