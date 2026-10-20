@@ -1,8 +1,7 @@
-use super::column_reader::ColumnReader;
-use crate::error::BridgeError;
+use super::column_reader::{ColumnReader, RowDecodeError};
+use crate::error::{BridgeError, ToJsError};
 use crate::session_params::KnownSessionParameters;
 use arrow::array::RecordBatch;
-use arrow::error::ArrowError;
 use napi::bindgen_prelude::{Array as JsArray, Env};
 use sf_core::apis::database_driver_v1::AsyncArrowBatchFetcher;
 use std::sync::Mutex;
@@ -43,10 +42,7 @@ impl StreamState {
             loop {
                 match fetcher.next_batch().await? {
                     Some(batch) if batch.num_rows() > 0 => {
-                        break Some(
-                            CurrentBatch::from_batch(&batch, session_params)
-                                .map_err(|e| BridgeError::Message(e.to_string()))?,
-                        );
+                        break Some(CurrentBatch::from_batch(&batch, session_params)?);
                     }
                     Some(_) => {}
                     None => break None,
@@ -91,7 +87,7 @@ impl CurrentBatch {
     fn from_batch(
         batch: &RecordBatch,
         session_params: &KnownSessionParameters,
-    ) -> Result<Self, ArrowError> {
+    ) -> Result<Self, RowDecodeError> {
         let column_readers = batch
             .schema()
             .fields()
@@ -100,8 +96,7 @@ impl CurrentBatch {
             .map(|(index, field)| {
                 ColumnReader::for_field(index, field, batch.column(index), session_params)
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(ArrowError::ComputeError)?;
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             column_readers,
             num_rows: batch.num_rows(),
@@ -117,7 +112,7 @@ impl CurrentBatch {
         for (index, reader) in self.column_readers.iter().enumerate() {
             let cell = reader
                 .read(self.row_index)
-                .map_err(napi::Error::from_reason)?;
+                .map_err(|e| BridgeError::from(e).to_js_error(*env))?;
             row.set(index as u32, cell)?;
         }
         self.row_index += 1;

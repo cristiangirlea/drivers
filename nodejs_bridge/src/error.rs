@@ -1,3 +1,4 @@
+use crate::rows::RowDecodeError;
 use napi::bindgen_prelude::*;
 use sf_core::apis::database_driver_v1::{ApiError, ErrorKind};
 use sf_core::http::retry::HttpError;
@@ -28,6 +29,7 @@ pub(crate) enum BridgeError {
         query_id: String,
         status: String,
     },
+    RowDecode(Arc<RowDecodeError>),
     Message(String),
 }
 
@@ -219,6 +221,17 @@ impl ClientError {
         }
     }
 
+    fn of_row_decode(error: &RowDecodeError) -> Self {
+        Self {
+            name: None,
+            message: error.to_string(),
+            code: None,
+            sql_state: None,
+            cause: None,
+            is_fatal: false,
+        }
+    }
+
     fn build(&self, env: Env) -> napi::Result<napi::Error> {
         let mut error = new_js_error(&env, self.message.clone())?;
         if let Some(name) = self.name {
@@ -348,6 +361,9 @@ impl ToJsError for BridgeError {
                     .build(env)
                     .unwrap_or_else(construct_js_error_fail)
             }
+            BridgeError::RowDecode(error) => ClientError::of_row_decode(error)
+                .build(env)
+                .unwrap_or_else(construct_js_error_fail),
             BridgeError::Message(message) => napi::Error::from_reason(message.clone()),
         }
     }
@@ -356,6 +372,12 @@ impl ToJsError for BridgeError {
 impl From<ApiError> for BridgeError {
     fn from(error: ApiError) -> Self {
         BridgeError::Core(Arc::new(error))
+    }
+}
+
+impl From<RowDecodeError> for BridgeError {
+    fn from(error: RowDecodeError) -> Self {
+        BridgeError::RowDecode(Arc::new(error))
     }
 }
 

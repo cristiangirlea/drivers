@@ -1,14 +1,27 @@
 use arrow::array::Array;
 use arrow::datatypes::{DataType, Field};
+use std::fmt;
 use std::str::FromStr;
 
 use super::numeric::{FloatColumn, IntColumn};
 use super::temporal::{TimeColumn, TimestampColumn};
 
+#[derive(Debug, Clone)]
+pub(crate) struct ColumnId {
+    pub(super) index: usize,
+    pub(super) logical_type: String,
+}
+
+impl fmt::Display for ColumnId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} column {}", self.logical_type, self.index)
+    }
+}
+
 pub(super) struct ColumnSource<'a> {
     pub(super) field: &'a Field,
     pub(super) column: &'a dyn Array,
-    pub(super) label: String,
+    pub(super) id: ColumnId,
 }
 
 impl ColumnSource<'_> {
@@ -25,9 +38,9 @@ impl ColumnSource<'_> {
             .field
             .metadata()
             .get(key)
-            .ok_or_else(|| format!("{} is missing {key} metadata", self.label))?;
+            .ok_or_else(|| format!("{} is missing {key} metadata", self.id))?;
         raw.parse()
-            .map_err(|_| format!("{} has invalid {key} metadata {raw:?}", self.label))
+            .map_err(|_| format!("{} has invalid {key} metadata {raw:?}", self.id))
     }
 
     pub(super) fn int_column(&self) -> Result<IntColumn, String> {
@@ -68,7 +81,7 @@ impl ColumnSource<'_> {
     fn unsupported(&self) -> String {
         format!(
             "{} has unsupported Arrow type {}",
-            self.label,
+            self.id,
             self.column.data_type()
         )
     }

@@ -5,7 +5,7 @@ use arrow::buffer::NullBuffer;
 use arrow::datatypes::Field;
 use chrono::NaiveTime;
 
-use super::column_source::ColumnSource;
+use super::column_source::{ColumnId, ColumnSource};
 use super::decfloat::format_decfloat;
 use super::js_cell::JsCell;
 use super::numeric::{FloatColumn, IntColumn, decimal_string};
@@ -14,6 +14,7 @@ use super::vector::vector_numbers;
 use crate::date_format::compiled_format;
 use crate::session_params::KnownSessionParameters;
 use sf_types::{ReadArrowError, ReadArrowType, SnowflakeTimestampTz};
+use snafu::Snafu;
 use std::borrow::Cow;
 
 /// Decodes one Arrow column into [`JsCell`]s, one cell at a time.
@@ -30,9 +31,21 @@ use std::borrow::Cow;
 /// Nulls are resolved here from the column's null bitmap, so a
 /// [`ColumnDecoder`] only ever sees non-null cells.
 pub(super) struct ColumnReader {
-    label: String,
+    id: ColumnId,
     nulls: Option<NullBuffer>,
     decoder: ColumnDecoder,
+}
+
+#[derive(Snafu, Debug)]
+pub(crate) enum RowDecodeError {
+    #[snafu(display("{message}"))]
+    Schema { message: String },
+    #[snafu(display("{column} row {row}: {source}"))]
+    InvalidValue {
+        column: ColumnId,
+        row: usize,
+        source: ReadArrowError,
+    },
 }
 
 enum ColumnDecoder {
@@ -52,31 +65,37 @@ enum ColumnDecoder {
 }
 
 impl ColumnReader {
-    // TODO: figure better error handling
     pub(super) fn for_field(
         index: usize,
         field: &Field,
         column: &dyn Array,
         session_params: &KnownSessionParameters,
-    ) -> Result<Self, String> {
-        let logical_type = field
-            .metadata()
-            .get("logicalType")
-            .ok_or_else(|| format!("column {index} is missing logicalType metadata"))?;
+    ) -> Result<Self, RowDecodeError> {
+        let logical_type =
+            field
+                .metadata()
+                .get("logicalType")
+                .ok_or_else(|| RowDecodeError::Schema {
+                    message: format!("column {index} is missing logicalType metadata"),
+                })?;
         let src = ColumnSource {
             field,
             column,
-            label: format!("{logical_type} column {index}"),
+            id: ColumnId {
+                index,
+                logical_type: logical_type.clone(),
+            },
         };
-        let decoder = ColumnDecoder::for_field(logical_type, &src, session_params)?;
+        let decoder = ColumnDecoder::for_field(logical_type, &src, session_params)
+            .map_err(|message| RowDecodeError::Schema { message })?;
         Ok(Self {
-            label: src.label,
+            id: src.id,
             nulls: column.nulls().cloned(),
             decoder,
         })
     }
 
-    pub(super) fn read(&self, row_index: usize) -> Result<JsCell<'_>, String> {
+    pub(super) fn read(&self, row_index: usize) -> Result<JsCell<'_>, RowDecodeError> {
         if self
             .nulls
             .as_ref()
@@ -86,7 +105,11 @@ impl ColumnReader {
         }
         self.decoder
             .read(row_index)
-            .map_err(|e| format!("{} row {row_index}: {e}", self.label))
+            .map_err(|source| RowDecodeError::InvalidValue {
+                column: self.id.clone(),
+                row: row_index,
+                source,
+            })
     }
 }
 
@@ -145,7 +168,7 @@ impl ColumnDecoder {
             ),
             "VARIANT" | "OBJECT" | "ARRAY" => Self::Variant(src.array()?),
             "VECTOR" => Self::Vector(src.array()?),
-            _ => return Err(format!("{} has an unsupported logicalType", src.label)),
+            _ => return Err(format!("{} has an unsupported logicalType", src.id)),
         })
     }
 
@@ -426,7 +449,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let err = reader(&field, &array).read(0).unwrap_err();
+        let err = reader(&field, &array).read(0).unwrap_err().to_string();
         assert!(
             err.contains("VECTOR column 0 row 0") && err.contains("is not Int32 or Float32"),
             "expected unsupported-child-type error, got: {err}"
@@ -501,10 +524,10 @@ mod tests {
         let field = time_field("0");
         let array = Int32Array::from(vec![Some(-1), Some(43_200), Some(86_400)]);
         let reader = reader(&field, &array);
-        let err = reader.read(0).unwrap_err();
+        let err = reader.read(0).unwrap_err().to_string();
         assert!(err.contains("row 0") && err.contains("-1"), "got: {err}");
         assert_eq!(reader.read(1).unwrap(), str_cell("12:00:00"));
-        let err = reader.read(2).unwrap_err();
+        let err = reader.read(2).unwrap_err().to_string();
         assert!(err.contains("row 2") && err.contains("86400"), "got: {err}");
     }
 
@@ -516,7 +539,8 @@ mod tests {
         let array = Int32Array::from(vec![Some(0)]);
         let err = ColumnReader::for_field(0, &field, &array, &session_params("HH24:MI:SS"))
             .err()
-            .unwrap();
+            .unwrap()
+            .to_string();
         assert!(
             err.contains("missing scale metadata"),
             "error should name the missing scale metadata, got: {err}"
@@ -529,7 +553,8 @@ mod tests {
         let array = BooleanArray::from(vec![true]);
         let err = ColumnReader::for_field(0, &field, &array, &session_params("HH24:MI:SS"))
             .err()
-            .unwrap();
+            .unwrap()
+            .to_string();
         assert!(
             err.contains("TIME column 0 has unsupported Arrow type"),
             "error should name the unsupported type, got: {err}"
@@ -929,7 +954,8 @@ mod tests {
         let array = Int64Array::from(vec![Some(0i64)]);
         let err = ColumnReader::for_field(0, &field, &array, &session_params("HH24:MI:SS"))
             .err()
-            .unwrap();
+            .unwrap()
+            .to_string();
         assert!(
             err.contains("TIMESTAMP_TZ column 0 has unsupported Arrow type"),
             "got: {err}"
