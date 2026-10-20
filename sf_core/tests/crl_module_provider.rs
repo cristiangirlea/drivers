@@ -29,11 +29,14 @@ async fn https_crl_download_uses_module_not_process_default() {
             .install_default()
             .expect("isolated child must claim the global provider before the CRL client");
 
-        let cache = CrlCache::new(CrlConfig {
-            enable_memory_caching: false,
-            enable_disk_caching: false,
-            ..Default::default()
-        })
+        let cache = CrlCache::new(
+            CrlConfig {
+                enable_memory_caching: false,
+                enable_disk_caching: false,
+                ..Default::default()
+            },
+            &sf_core::tls::RootStoreProvider::new(),
+        )
         .expect("build CRL client");
         let body = timeout(Duration::from_secs(10), cache.get(&url))
             .await

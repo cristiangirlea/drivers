@@ -599,7 +599,10 @@ mod tests {
         );
 
         let owned = DatabaseDriverV1::new();
-        let cache = owned.crl_manager.cache(memory_crl_config()).expect("cache");
+        let cache = owned
+            .crl_manager
+            .cache(memory_crl_config(), &owned.root_store_provider.snapshot())
+            .expect("cache");
         cache.wait_for_scheduler(true);
         drop(owned);
         cache.wait_for_scheduler(false);
@@ -622,7 +625,10 @@ mod tests {
         );
         let shared_cache = injected_left
             .crl_manager
-            .cache(memory_crl_config())
+            .cache(
+                memory_crl_config(),
+                &injected_left.root_store_provider.snapshot(),
+            )
             .expect("shared cache");
         shared_cache.wait_for_scheduler(true);
         drop(injected_left);

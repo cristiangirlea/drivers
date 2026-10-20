@@ -63,9 +63,10 @@ impl RootStoreProvider {
     pub(crate) async fn prepare_native_if_needed(
         &self,
         tls_config: &TlsConfig,
+        crl_cache_exists: bool,
     ) -> Result<RootStoreSnapshot<'_>, TlsError> {
         let snapshot = self.snapshot();
-        if !needs_native_roots(tls_config) || self.0.roots.get().is_some() {
+        if !needs_native_roots(tls_config, crl_cache_exists) || self.0.roots.get().is_some() {
             return Ok(snapshot);
         }
         let provider = self.clone();
@@ -177,8 +178,14 @@ impl Default for RootStoreProvider {
     }
 }
 
-fn needs_native_roots(tls_config: &TlsConfig) -> bool {
-    tls_config.verify_certificates && tls_config.custom_root_store_path.is_none()
+fn needs_native_roots(tls_config: &TlsConfig, crl_cache_exists: bool) -> bool {
+    let crl_download_needs_native_roots = !crl_cache_exists
+        && matches!(
+            tls_config.crl_config.check_mode,
+            CertRevocationCheckMode::Enabled | CertRevocationCheckMode::Advisory
+        );
+    tls_config.verify_certificates
+        && (tls_config.custom_root_store_path.is_none() || crl_download_needs_native_roots)
 }
 
 fn load_platform_roots(
@@ -272,7 +279,9 @@ pub(crate) async fn create_tls_client_with_proxy_prepared(
     crl_manager: CrlManager,
     roots: RootStoreProvider,
 ) -> Result<Client, TlsError> {
-    let snapshot = roots.prepare_native_if_needed(&tls_config).await?;
+    let snapshot = roots
+        .prepare_native_if_needed(&tls_config, crl_manager.has_cache())
+        .await?;
     build_tls_client_and_rustls_config_sync(&tls_config, proxy, crl_manager, &snapshot, None, false)
         .map(|(c, _)| c)
 }
@@ -300,7 +309,9 @@ pub(crate) async fn build_tls_client_and_rustls_config(
     connect_timeout: Option<Duration>,
     need_diag_config: bool,
 ) -> Result<(Client, Option<Arc<rustls::ClientConfig>>), TlsError> {
-    let snapshot = roots.prepare_native_if_needed(tls_config).await?;
+    let snapshot = roots
+        .prepare_native_if_needed(tls_config, crl_manager.has_cache())
+        .await?;
     build_tls_client_and_rustls_config_sync(
         tls_config,
         proxy,
@@ -397,6 +408,7 @@ fn build_tls_client_and_rustls_config_sync(
                 &protocol_versions,
                 ClientAlpn::Default,
                 crl_manager,
+                roots,
             )?;
             let mut client_builder = configure_http_client(Client::builder(), proxy)?
                 .use_preconfigured_tls(reqwest_rustls_cfg);
@@ -545,6 +557,7 @@ fn configure_tls_builder(
                 &protocol_versions,
                 alpn,
                 crl_manager,
+                roots,
             )?;
             Ok(builder.use_preconfigured_tls(rustls_cfg))
         }
@@ -593,6 +606,7 @@ fn build_crl_rustls_config(
     protocol_versions: &[&'static rustls::SupportedProtocolVersion],
     alpn: ClientAlpn,
     crl_manager: CrlManager,
+    roots: &RootStoreSnapshot<'_>,
 ) -> Result<rustls::ClientConfig, TlsError> {
     if !verify_hostname {
         tracing::warn!("Hostname verification disabled (CRL path)");
@@ -609,6 +623,7 @@ fn build_crl_rustls_config(
         root_store,
         verify_hostname,
         crl_manager,
+        roots,
     )
     .context(VerifierBuildSnafu)?;
 
@@ -659,7 +674,7 @@ pub(crate) async fn default_verified_client_builder(
     roots: &RootStoreProvider,
 ) -> Result<ClientBuilder, TlsError> {
     let snapshot = roots
-        .prepare_native_if_needed(&TlsConfig::default())
+        .prepare_native_if_needed(&TlsConfig::default(), false)
         .await?;
     default_verified_client_builder_from_snapshot(&snapshot)
 }
@@ -1254,6 +1269,155 @@ mod tests {
             provider.clone(),
         )
         .expect("custom PEM client");
+        assert!(provider.0.roots.get().is_none());
+    }
+
+    #[test]
+    fn needs_native_roots_includes_crl_download_until_the_cache_exists() {
+        let custom = TlsConfig {
+            custom_root_store_path: Some(std::path::PathBuf::from("custom.pem")),
+            ..Default::default()
+        };
+        assert!(!needs_native_roots(&custom, false));
+
+        let mut crl_on = custom.clone();
+        crl_on.crl_config.check_mode = CertRevocationCheckMode::Enabled;
+        assert!(needs_native_roots(&crl_on, false));
+        assert!(!needs_native_roots(&crl_on, true));
+
+        crl_on.crl_config.check_mode = CertRevocationCheckMode::Advisory;
+        assert!(needs_native_roots(&crl_on, false));
+        assert!(!needs_native_roots(&crl_on, true));
+
+        crl_on.verify_certificates = false;
+        assert!(!needs_native_roots(&crl_on, false));
+
+        assert!(needs_native_roots(&TlsConfig::default(), true));
+    }
+
+    static CUSTOM_CRL_NATIVE_LOADS: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+    static CUSTOM_CRL_LOAD_THREAD: std::sync::Mutex<Option<std::thread::ThreadId>> =
+        std::sync::Mutex::new(None);
+
+    fn count_custom_crl_native_load() -> rustls_native_certs::CertificateResult {
+        CUSTOM_CRL_NATIVE_LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        *CUSTOM_CRL_LOAD_THREAD
+            .lock()
+            .expect("custom CRL load thread") = Some(std::thread::current().id());
+        empty_native_error()
+    }
+
+    #[tokio::test]
+    async fn custom_crl_prepares_a_failed_native_load_once_per_cache() {
+        CUSTOM_CRL_NATIVE_LOADS.store(0, std::sync::atomic::Ordering::Relaxed);
+        let worker = std::thread::current().id();
+        let pem = test_ca_pem();
+        let mut pem_file = tempfile::NamedTempFile::new().expect("custom PEM");
+        pem_file.write_all(&pem).expect("write custom PEM");
+        let config = TlsConfig {
+            custom_root_store_path: Some(pem_file.path().to_path_buf()),
+            crl_config: CrlConfig {
+                check_mode: CertRevocationCheckMode::Enabled,
+                enable_memory_caching: false,
+                enable_disk_caching: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let provider = RootStoreProvider::with_native_loader(count_custom_crl_native_load);
+        let manager = CrlManager::new();
+        build_tls_client_and_rustls_config(
+            &config,
+            Some(&ProxyConfig::default()),
+            manager.clone(),
+            provider.clone(),
+            None,
+            false,
+        )
+        .await
+        .expect("custom PEM client with CRL download");
+        assert_eq!(
+            CUSTOM_CRL_NATIVE_LOADS.load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+        let load_thread = CUSTOM_CRL_LOAD_THREAD
+            .lock()
+            .expect("custom CRL load thread")
+            .expect("load thread was recorded");
+        assert_ne!(load_thread, worker);
+        assert!(provider.0.roots.get().is_none());
+
+        build_tls_client_and_rustls_config(
+            &config,
+            Some(&ProxyConfig::default()),
+            manager,
+            provider.clone(),
+            None,
+            false,
+        )
+        .await
+        .expect("second client reuses the CRL cache");
+        assert_eq!(
+            CUSTOM_CRL_NATIVE_LOADS.load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+
+        build_tls_client_and_rustls_config(
+            &config,
+            Some(&ProxyConfig::default()),
+            CrlManager::new(),
+            provider,
+            None,
+            false,
+        )
+        .await
+        .expect("a new CRL cache prepares again");
+        assert_eq!(
+            CUSTOM_CRL_NATIVE_LOADS.load(std::sync::atomic::Ordering::Relaxed),
+            2
+        );
+    }
+
+    static EXTRA_CRL_NATIVE_LOADS: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    fn count_extra_crl_native_load() -> rustls_native_certs::CertificateResult {
+        EXTRA_CRL_NATIVE_LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        empty_native_error()
+    }
+
+    #[tokio::test]
+    async fn extra_crl_reuses_a_failed_native_load() {
+        EXTRA_CRL_NATIVE_LOADS.store(0, std::sync::atomic::Ordering::Relaxed);
+        let pem = test_ca_pem();
+        let mut pem_file = tempfile::NamedTempFile::new().expect("extra PEM");
+        pem_file.write_all(&pem).expect("write extra PEM");
+        let config = TlsConfig {
+            extra_root_store_path: Some(pem_file.path().to_path_buf()),
+            crl_config: CrlConfig {
+                check_mode: CertRevocationCheckMode::Enabled,
+                enable_memory_caching: false,
+                enable_disk_caching: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let provider = RootStoreProvider::with_native_loader(count_extra_crl_native_load);
+        build_tls_client_and_rustls_config(
+            &config,
+            Some(&ProxyConfig::default()),
+            CrlManager::new(),
+            provider.clone(),
+            None,
+            false,
+        )
+        .await
+        .expect("extra PEM client with CRL");
+        assert_eq!(
+            EXTRA_CRL_NATIVE_LOADS.load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
         assert!(provider.0.roots.get().is_none());
     }
 

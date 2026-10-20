@@ -97,7 +97,9 @@ impl AwsSdkReqwestClient {
         crl_manager: CrlManager,
         roots: RootStoreProvider,
     ) -> Result<Self, TlsError> {
-        let snapshot = roots.prepare_native_if_needed(tls_config).await?;
+        let snapshot = roots
+            .prepare_native_if_needed(tls_config, crl_manager.has_cache())
+            .await?;
         Self::finish(configure_http1_tls_builder(
             reqwest::Client::builder(),
             tls_config,

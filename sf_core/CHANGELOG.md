@@ -153,6 +153,8 @@ Internal changes:
 - Changed the platform-detection and Workload Identity attestation clients to reuse the driver's cached system root certificates, and stopped the plain-HTTP IMDS region lookup from loading the OS trust store. (snowflakedb/drivers#2690)
 - Removed the synchronous default-TLS client builder. Auxiliary clients build from a root-store snapshot. (snowflakedb/drivers#2690)
 - Narrowed platform detection's config and entry point to crate visibility. (snowflakedb/drivers#2690)
+- Changed the CRL download client to reuse the driver's cached system root certificates. (snowflakedb/drivers#2691)
+- Changed custom-CA revocation checks to load system root certificates on a blocking thread, and only for the first CRL cache. (snowflakedb/drivers#2691)
 
 Test improvements:
 
