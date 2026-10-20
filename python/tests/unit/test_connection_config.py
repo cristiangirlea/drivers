@@ -282,9 +282,9 @@ class TestFromKwargs:
     def test_odbc_only_proxy_dsn_keys_are_not_python_kwargs(self):
         # `PROXYWITHENV` / `ALLOWEMPTYPROXY` are ODBC DSN keys and `NOPROXY`
         # is not a Python kwarg, so none is applied. `PROXYWITHENV=False`
-        # stays in `_extra`; `use_proxy_env` stays at its default.
+        # stays in `_extra`; `use_proxy_env` stays unset.
         config = ConnectionConfig.from_kwargs(PROXYWITHENV=False, ALLOWEMPTYPROXY=False, NOPROXY="*.corp")
-        assert config.use_proxy_env is True
+        assert config.use_proxy_env is None
         assert config.allow_empty_proxy is True
         assert config.no_proxy is None
         assert config._extra == {
@@ -656,11 +656,18 @@ class TestToOptions:
         opts = config.to_options()
         assert opts["proxy"] == "http://user:pass@proxy.example.com:8080"
 
-    def test_omitted_use_proxy_env_forwards_true(self):
+    def test_omitted_use_proxy_env_is_not_forwarded(self):
         for config in (ConnectionConfig(), ConnectionConfig.from_kwargs()):
-            opts = config.to_options()
-            assert opts["use_proxy_env"] is True
+            assert config.use_proxy_env is None
+            assert "use_proxy_env" not in config.to_options()
         assert ConnectionConfig().to_options()["allow_empty_proxy"] is True
+
+    def test_explicit_true_use_proxy_env_forwards_true(self):
+        for config in (
+            ConnectionConfig(use_proxy_env=True),
+            ConnectionConfig.from_kwargs(use_proxy_env=True),
+        ):
+            assert config.to_options()["use_proxy_env"] is True
 
     def test_explicit_false_use_proxy_env_forwards_false(self):
         for config in (

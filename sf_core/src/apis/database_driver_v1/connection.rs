@@ -268,6 +268,15 @@ impl DatabaseDriverV1 {
         .await
     }
 
+    fn apply_unset_use_proxy_env_preset(resolved: &mut ParamStore, preset: bool) {
+        if resolved.get_bool(param_names::USE_PROXY_ENV).is_none() {
+            resolved.insert(
+                param_names::USE_PROXY_ENV.as_str().to_owned(),
+                Setting::Bool(preset),
+            );
+        }
+    }
+
     async fn connection_init_inner(
         &self,
         conn_handle: Handle,
@@ -303,6 +312,10 @@ impl DatabaseDriverV1 {
                     crate::xp_backend::seed_settings_for_host_backend(
                         &mut resolved,
                         self.xp_slot.running_inside_xp(),
+                    );
+                    Self::apply_unset_use_proxy_env_preset(
+                        &mut resolved,
+                        self.wrapper_presets.use_proxy_env_default,
                     );
                     let config = ConnectionConfig::build(&resolved).context(ConfigurationSnafu)?;
                     let host = resolved.get_string(param_names::HOST);
@@ -3192,6 +3205,21 @@ mod tests {
             conn.connection_seed.insert(key.to_string(), value);
         }
         conn
+    }
+
+    #[test]
+    fn unset_use_proxy_env_takes_the_preset_and_an_explicit_value_wins() {
+        let mut unset = ParamStore::new();
+        DatabaseDriverV1::apply_unset_use_proxy_env_preset(&mut unset, true);
+        assert_eq!(unset.get_bool(param_names::USE_PROXY_ENV), Some(true));
+
+        let mut explicit = ParamStore::new();
+        explicit.insert(
+            param_names::USE_PROXY_ENV.as_str().to_owned(),
+            Setting::Bool(false),
+        );
+        DatabaseDriverV1::apply_unset_use_proxy_env_preset(&mut explicit, true);
+        assert_eq!(explicit.get_bool(param_names::USE_PROXY_ENV), Some(false));
     }
 
     #[test]

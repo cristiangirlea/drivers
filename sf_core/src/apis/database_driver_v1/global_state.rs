@@ -89,6 +89,10 @@ pub struct WrapperPresets {
     /// adopted as handed over: telemetry is sent without a session id, and a gone
     /// session surfaces on the first real request. Only Node.js sets this false, for `deserializeConnection`.
     pub validate_session_token: bool,
+    /// Value of `use_proxy_env` when the caller and any connection profile leave it
+    /// unset. Python and Node.js read `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`.
+    /// JDBC, ODBC, and the shared default do not.
+    pub use_proxy_env_default: bool,
 }
 
 impl Default for WrapperPresets {
@@ -115,6 +119,7 @@ impl Default for WrapperPresets {
             honor_scoped_temp_bind_stage: false,
             serialize_session_operations: false,
             validate_session_token: true,
+            use_proxy_env_default: false,
         }
     }
 }
@@ -125,6 +130,7 @@ impl WrapperPresets {
         Self {
             optimistic_alter_session_param_cache: true,
             honor_scoped_temp_bind_stage: true,
+            use_proxy_env_default: true,
             ..Self::default()
         }
     }
@@ -144,6 +150,7 @@ impl WrapperPresets {
             honor_scoped_temp_bind_stage: false,
             serialize_session_operations: true,
             validate_session_token: true,
+            use_proxy_env_default: false,
         }
     }
 
@@ -167,6 +174,7 @@ impl WrapperPresets {
             put_get_resultset_flavor: PutGetResultsetFlavor::NodeJs,
             put_compress_level_default: 6,
             validate_session_token: false,
+            use_proxy_env_default: true,
             ..Self::default()
         }
     }
@@ -667,6 +675,15 @@ mod tests {
             WrapperPresets::nodejs().configuration_flavor,
             Wrapper::NodeJs
         );
+    }
+
+    #[test]
+    fn use_proxy_env_default_follows_wrapper() {
+        assert!(WrapperPresets::python().use_proxy_env_default);
+        assert!(WrapperPresets::nodejs().use_proxy_env_default);
+        assert!(!WrapperPresets::jdbc().use_proxy_env_default);
+        assert!(!WrapperPresets::odbc().use_proxy_env_default);
+        assert!(!WrapperPresets::default().use_proxy_env_default);
     }
 
     #[test]

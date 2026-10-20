@@ -385,8 +385,10 @@ class ConnectionConfig(ConnectionConfigMixin):
     Default: False
     """
 
-    use_proxy_env: bool | None = True
-    """Honour HTTP_PROXY/HTTPS_PROXY/NO_PROXY env vars when no explicit proxy is set. Default: True"""
+    use_proxy_env: bool | None = None
+    """Honour HTTP_PROXY/HTTPS_PROXY/NO_PROXY env vars when no explicit proxy is set. Unset uses the wrapper preset
+    (true for Python and Node.js, false otherwise)
+    """
 
     user: str | None = None
     """Login username. Required"""

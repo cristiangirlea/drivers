@@ -2398,14 +2398,20 @@ static PARAM_DEFS: &[ParamDef] = &[
     ParamDef::builder()
         .canonical_name(param_names::USE_PROXY_ENV.as_str())
         // Legacy ODBC DSN `ProxyWithEnv` (`Snowflake.h`), uppercased by the
-        // connection-string parser. ODBC-only: the legacy Python connector has
-        // no equivalent kwarg (it consulted the proxy env vars unconditionally).
+        // connection-string parser.
         .aliases(aliases![Odbc; "PROXYWITHENV"])
         .value_type(ValueType::Bool)
-        .default(DefaultValue::Bool(false))
+        // No registry default: unset must stay absent so connection init can
+        // apply `WrapperPresets::use_proxy_env_default`. A stored false would
+        // fill the resolved settings before that preset runs, and a Python
+        // field default of true would be sent as an explicit option and
+        // outrank a connection profile.
         .sensitive(false)
         .auth(false)
-        .description("Honour HTTP_PROXY/HTTPS_PROXY/NO_PROXY env vars when no explicit proxy is set")
+        .description(
+            "Honour HTTP_PROXY/HTTPS_PROXY/NO_PROXY env vars when no explicit proxy is set. \
+             Unset uses the wrapper preset (true for Python and Node.js, false otherwise)",
+        )
         .scopes(&[ParamScope::Connection])
         .mutable_after_connect(false)
         .build(),
@@ -3662,6 +3668,15 @@ mod tests {
             .resolve("client_store_temporary_credential")
             .expect("client_store_temporary_credential should resolve");
         assert_eq!(def.default, Some(DefaultValue::Bool(true)));
+    }
+
+    #[test]
+    fn use_proxy_env_has_no_registry_default() {
+        let def = registry()
+            .resolve("use_proxy_env")
+            .expect("use_proxy_env should resolve");
+        assert_eq!(def.value_type, ValueType::Bool);
+        assert!(def.default.is_none());
     }
 
     #[test]
