@@ -7,6 +7,7 @@ use std::time::Duration;
 use serde_json::json;
 use sf_core::apis::database_driver_v1::heartbeat::spawn_heartbeat_task;
 use sf_core::config::rest_parameters::test_fixtures::test_client_info;
+use sf_core::protobuf::apis::database_driver_v1::{DriverProviders, WrapperPresets};
 use sf_core::rest::snowflake::{SessionTokens, TokenExpiry};
 use sf_core::sensitive::SensitiveString;
 use tokio::sync::RwLock as AsyncRwLock;
@@ -569,6 +570,83 @@ async fn assert_login_heartbeat_frequency_is_clamped(requested: i64, expected: i
 }
 
 // ---------------------------------------------------------------------------
+//                     Adopted Session (session_token + master_token)
+// ---------------------------------------------------------------------------
+
+/// Eight heartbeat intervals: with a 1 s master validity and no requested
+/// frequency the interval is 1/16 s. Asserting that no heartbeat is sent
+/// needs a fixed window; there is no event to poll for.
+const NO_HEARTBEAT_WINDOW: Duration = Duration::from_millis(500);
+
+#[tokio::test]
+async fn should_send_heartbeats_on_an_adopted_session_when_keep_alive_is_true() {
+    // Given a mock server that expects at least 2 heartbeats
+    let server = MockServer::start().await;
+    let heartbeats = server
+        .register_as_scoped(heartbeat_mock().expect(2..))
+        .await;
+    mount_logout_success(&server).await;
+
+    // When a connection adopts a session with keep-alive enabled
+    let client = adopt_session(&server, Some(true)).await;
+    let started = tokio::time::timeout(Duration::from_secs(10), heartbeats.wait_until_satisfied())
+        .await
+        .is_ok();
+    close_connection(client).await;
+
+    // Then heartbeats are sent for the adopted session
+    assert!(started, "expected at least 2 heartbeats within 10 s");
+}
+
+#[tokio::test]
+async fn should_not_send_heartbeats_on_an_adopted_session_when_keep_alive_is_omitted() {
+    // Given a mock server that expects no heartbeat
+    let server = MockServer::start().await;
+    heartbeat_mock().expect(0).mount(&server).await;
+    mount_logout_success(&server).await;
+
+    // When a connection adopts a session without the keep-alive option
+    let client = adopt_session(&server, None).await;
+    tokio::time::sleep(NO_HEARTBEAT_WINDOW).await;
+    close_connection(client).await;
+
+    // Then no heartbeat is sent: `expect(0)` is verified when the server drops
+}
+
+async fn adopt_session(server: &MockServer, keep_alive: Option<bool>) -> SnowflakeTestClient {
+    let server_uri = server.uri();
+    tokio::task::spawn_blocking(move || {
+        let providers = DriverProviders {
+            wrapper_presets: WrapperPresets {
+                validate_session_token: false,
+                ..WrapperPresets::default()
+            },
+            ..Default::default()
+        };
+        let client = SnowflakeTestClient::with_int_tests_params_using(Some(&server_uri), providers);
+        client.set_connection_option("session_token", "adopted-session-token");
+        client.set_connection_option("master_token", "adopted-master-token");
+        client.set_connection_option_int("master_validity_in_seconds", 1);
+        if let Some(keep_alive) = keep_alive {
+            client.set_connection_option_bool("CLIENT_SESSION_KEEP_ALIVE", keep_alive);
+        }
+        client
+            .connect()
+            .expect("adopting the session should succeed");
+        client
+    })
+    .await
+    .expect("adopt task panicked")
+}
+
+async fn close_connection(client: SnowflakeTestClient) {
+    let result = tokio::task::spawn_blocking(move || client.connection_close_blocking())
+        .await
+        .expect("close task panicked");
+    assert!(result.is_ok(), "close should succeed: {result:?}");
+}
+
+// ---------------------------------------------------------------------------
 //                          Helpers
 // ---------------------------------------------------------------------------
 
@@ -584,6 +662,13 @@ async fn mount_logout_success(server: &MockServer) {
         )
         .mount(server)
         .await;
+}
+
+fn heartbeat_mock() -> Mock {
+    Mock::given(method("POST"))
+        .and(path("/session/heartbeat"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"success": true})))
+        .named("heartbeat")
 }
 
 fn test_tokens(session_token: &str) -> SessionTokens {
