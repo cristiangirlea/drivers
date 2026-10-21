@@ -229,8 +229,8 @@ fn deprecated_registry_param_warnings(params: &HashMap<String, String>) -> Vec<W
 /// the `sf_core` registry under the ODBC flavor and emitted under its canonical
 /// name, so core receives canonical keys and no longer has to remap ODBC wire
 /// spellings. Keys unknown to the registry and registry entries marked
-/// `ignored` (ODBC driver-manager metadata such as `DRIVER` and `DSN`, leftover
-/// `TRACING`, deprecated connection-string logging keys such as `LogLevel`,
+/// `ignored` (ODBC driver-manager metadata such as `DRIVER` and `DSN`,
+/// deprecated connection-string logging keys such as `LogLevel` and `TRACING`,
 /// and removed test-only knobs such as `INJECT_CURL_TIMEOUT`) are dropped.
 fn normalize_connection_string_option(
     key: String,
@@ -349,7 +349,7 @@ fn apply_global_ssl_version_override(
 /// Connection-string keys that do not resolve through the `sf_core` registry
 /// under the ODBC flavor, sorted for a stable diagnostic. A key the registry
 /// resolves stays recognized, including `ignored` entries, so leftover
-/// driver-manager, `TRACING`, deprecated logging keywords, deprecated OCSP
+/// driver-manager keywords, deprecated logging keywords, deprecated OCSP
 /// keywords, and removed test-only knobs do not draw 01S00.
 fn unrecognized_connection_string_keys(params: &HashMap<String, String>) -> Vec<String> {
     let registry = sf_core::config::param_registry::registry();
@@ -1001,7 +1001,7 @@ pub fn connect<E: OdbcEncoding>(
 /// Merge DSN-stored attributes underneath caller-supplied params.
 ///
 /// Explicit params (connection string / UID+PWD) win over DSN-stored values.
-/// Strips DSN metadata keys (`Driver`, `Description`, `DSN`) and `TRACING` key from the result.
+/// Strips DSN metadata keys (`Driver`, `Description`, `DSN`) from the result.
 /// No-op when `dsn` is `None`.
 fn merge_dsn_config(
     explicit: HashMap<String, String>,
@@ -1025,7 +1025,6 @@ fn merge_dsn_config_impl(
         !k.eq_ignore_ascii_case("Driver")
             && !k.eq_ignore_ascii_case("Description")
             && !k.eq_ignore_ascii_case("DSN")
-            && !k.eq_ignore_ascii_case("TRACING")
     });
     Ok(explicit)
 }
@@ -3459,7 +3458,7 @@ mod tests {
     #[test]
     fn deprecated_registry_param_warnings_cover_all_ignored_logging_keys() {
         let params = parse_connection_string(
-            "LogLevel=DEBUG;LogPath=/tmp;LogFileSize=10;LogFileCount=2;CURLVerboseMode=true;EnablePidLogFileNames=true;CLIENT_CONFIG_FILE=/tmp/sf.json",
+            "LogLevel=DEBUG;LogPath=/tmp;LogFileSize=10;LogFileCount=2;CURLVerboseMode=true;EnablePidLogFileNames=true;CLIENT_CONFIG_FILE=/tmp/sf.json;TRACING=0",
         )
         .unwrap();
         let warnings = deprecated_registry_param_warnings(&params);
@@ -3489,6 +3488,7 @@ mod tests {
                 "LOGFILESIZE",
                 "LOGLEVEL",
                 "LOGPATH",
+                "TRACING",
             ]
         );
     }
@@ -4658,14 +4658,14 @@ mod tests {
         }
 
         #[test]
-        fn should_strip_tracing_from_stored_dsn() {
+        fn should_keep_tracing_from_stored_dsn() {
             let stored = HashMap::from([
                 ("TRACING".to_owned(), "6".to_owned()),
                 ("SERVER".to_owned(), "myhost".to_owned()),
             ]);
             let result =
                 merge_dsn_config_impl(HashMap::new(), Some("TestDSN"), ok_lookup(stored)).unwrap();
-            assert!(!result.contains_key("TRACING"));
+            assert_eq!(result.get("TRACING").unwrap(), "6");
             assert_eq!(result.get("SERVER").unwrap(), "myhost");
         }
 

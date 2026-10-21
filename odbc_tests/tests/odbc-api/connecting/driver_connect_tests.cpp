@@ -9,12 +9,15 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
+#include "HandleWrapper.hpp"
 #include "ODBCConfig.hpp"
 #include "ODBCFixtures.hpp"
 #include "compatibility.hpp"
 #include "get_diag_rec.hpp"
 #include "odbc_cast.hpp"
+#include "odbc_matchers.hpp"
 #include "test_macros.hpp"
 #include "test_setup.hpp"
 
@@ -605,33 +608,55 @@ TEST_CASE_METHOD(EnvDefaultDSNFixture, "SQLDriverConnect: Multiple concurrent co
 // that are not part of the standard ODBC specification. These parameters are
 // extensions provided by the Snowflake driver for driver-specific functionality.
 
-TEST_CASE_METHOD(DbcDefaultDSNFixture, "SQLDriverConnect: legacy TRACING parameter is ignored",
-                 "[odbc-api][driverconnect][dsn][integration][snowflake]") {
-  const std::string connStr = "DSN=" + dsn_name() + ";TRACING=6";
+namespace {
 
-  SQLRETURN ret = SQLDriverConnect(dbc_handle(), nullptr, sqlchar(connStr.c_str()), SQL_NTS, nullptr, 0, nullptr,
-                                   SQL_DRIVER_NOPROMPT);
+void check_legacy_tracing_connect(SQLHDBC dbc, const std::string& conn_str) {
+  SQLRETURN ret =
+      SQLDriverConnect(dbc, nullptr, sqlchar(conn_str.c_str()), SQL_NTS, nullptr, 0, nullptr, SQL_DRIVER_NOPROMPT);
+  const auto connect_result = OdbcResult(ret, SQL_HANDLE_DBC, dbc);
+  const auto records = get_diag_rec(SQL_HANDLE_DBC, dbc);
   REQUIRE(SQL_SUCCEEDED(ret));
+  CHECK(joined_text_for_state(records, "01S00").empty());
 
-  auto records = get_diag_rec(SQL_HANDLE_DBC, dbc_handle());
-  auto find_01S00 = [&records]() -> const DiagRec* {
-    for (const auto& r : records) {
-      if (r.sqlState == "01S00") return &r;
+  NEW_DRIVER_ONLY("BD#144") {
+    REQUIRE_THAT(connect_result, OdbcMatchers::IsSuccessWithInfo());
+    // iODBC's DM drops the driver's SQLDriverConnect SUCCESS_WITH_INFO record (BD#61).
+    NON_IODBC {
+      REQUIRE_THAT(connect_result, OdbcMatchers::HasSqlState("01000"));
+      CHECK_THAT(joined_text_for_state(records, "01000"),
+                 Catch::Matchers::ContainsSubstring("Parameter 'TRACING' is deprecated and has no effect. "
+                                                    "Set LogLevel in sf.odbc.ini to configure driver log verbosity."));
     }
-    return nullptr;
-  };
-  REQUIRE(find_01S00() == nullptr);
+  }
+  OLD_DRIVER_ONLY("BD#144") {
+    for (const auto& rec : records) {
+      CHECK_THAT(rec.messageText, !Catch::Matchers::ContainsSubstring("TRACING", Catch::CaseSensitive::No));
+    }
+  }
 
-  SQLHSTMT stmt = SQL_NULL_HSTMT;
-  ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc_handle(), &stmt);
-  REQUIRE(ret == SQL_SUCCESS);
-  ret = SQLExecDirect(stmt, sqlchar("SELECT 1"), SQL_NTS);
-  REQUIRE((ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO));
-  ret = SQLFreeHandle(SQL_HANDLE_STMT, stmt);
-  REQUIRE(ret == SQL_SUCCESS);
+  {
+    StatementHandleWrapper stmt(dbc, SQL_HANDLE_STMT);
+    ret = SQLExecDirect(stmt.getHandle(), sqlchar("SELECT 1"), SQL_NTS);
+    REQUIRE((ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO));
+  }
 
-  ret = SQLDisconnect(dbc_handle());
+  ret = SQLDisconnect(dbc);
   REQUIRE(ret == SQL_SUCCESS);
+}
+
+}  // namespace
+
+// TRACING=0 keeps the old driver's file logger off during reference runs.
+TEST_CASE_METHOD(DbcDefaultDSNFixture,
+                 "SQLDriverConnect: legacy TRACING in the connection string warns as deprecated only in the new driver",
+                 "[odbc-api][driverconnect][dsn][integration][snowflake]") {
+  check_legacy_tracing_connect(dbc_handle(), "DSN=" + dsn_name() + ";TRACING=0");
+}
+
+TEST_CASE("SQLDriverConnect: legacy TRACING stored in the DSN warns as deprecated only in the new driver",
+          "[odbc-api][driverconnect][dsn][integration][snowflake]") {
+  DbcFixture fixture(DataSourceConfig::Snowflake().set("TRACING", "0"));
+  check_legacy_tracing_connect(fixture.dbc_handle(), "DSN=" + fixture.dsn_name());
 }
 
 TEST_CASE_METHOD(DbcDefaultDSNFixture, "SQLDriverConnect: Snowflake CLIENT_SESSION_KEEP_ALIVE parameter",

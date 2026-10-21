@@ -9,6 +9,10 @@ add_odbc_test(odbc_api_stmt_attr_tests stmt_attr_tests.cpp)
 
 if(WIN32 AND DRIVER_TYPE STREQUAL "NEW")
   add_executable(odbc_api_config_dsn_tests config_dsn_tests.cpp)
-  target_link_libraries(odbc_api_config_dsn_tests PRIVATE Catch2::Catch2WithMain)
+  target_link_libraries(odbc_api_config_dsn_tests PRIVATE Catch2::Catch2WithMain common odbccp32)
+  if(MSVC)
+    # odbccp32.lib's static part references printf-family symbols the UCRT provides only through this library.
+    target_link_libraries(odbc_api_config_dsn_tests PRIVATE legacy_stdio_definitions)
+  endif()
   catch_discover_tests(odbc_api_config_dsn_tests TEST_PREFIX "odbc_api_config_dsn_tests: ")
 endif()

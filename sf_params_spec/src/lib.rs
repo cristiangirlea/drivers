@@ -2544,7 +2544,6 @@ static PARAM_DEFS: &[ParamDef] = &[
     ignored_odbc_param(param_names::API_LEVEL.as_str()),
     ignored_odbc_param(param_names::SQL_LEVEL.as_str()),
     ignored_odbc_param(param_names::CONNECT_FUNCTIONS.as_str()),
-    ignored_odbc_param(param_names::TRACING.as_str()),
     ignored_odbc_param(param_names::CPTIMEOUT.as_str()),
     // ── Deprecated ODBC connection-string keys ────────────────────────
     odbc_deprecated(
@@ -2609,6 +2608,14 @@ static PARAM_DEFS: &[ParamDef] = &[
         "Legacy sf_client_config.json path. The driver accepts the key and does not apply it",
         Deprecation::Ignored {
             guidance: "Configure driver logging in sf.odbc.ini; sf_client_config.json is not read.",
+        },
+    ),
+    odbc_deprecated(
+        param_names::TRACING.as_str(),
+        aliases![],
+        "Legacy 3.x per-DSN trace level (0-6). The driver accepts the key and does not apply it; file logging is configured in sf.odbc.ini",
+        Deprecation::Ignored {
+            guidance: "Set LogLevel in sf.odbc.ini to configure driver log verbosity.",
         },
     ),
     // ── Deprecated ODBC test-only connection-string knobs ─────────────
@@ -3268,7 +3275,6 @@ mod tests {
             ("APILevel", "apilevel"),
             ("SQLLevel", "sqllevel"),
             ("ConnectFunctions", "connectfunctions"),
-            ("TRACING", "tracing"),
             ("CPTimeout", "cptimeout"),
         ] {
             let def = r
@@ -3342,6 +3348,7 @@ mod tests {
             ("CURLVerboseMode", "curl_verbose_mode"),
             ("EnablePidLogFileNames", "enable_pid_log_file_names"),
             ("CLIENT_CONFIG_FILE", "client_config_file"),
+            ("TRACING", "tracing"),
         ];
         for (key, canonical) in cases {
             let def = r

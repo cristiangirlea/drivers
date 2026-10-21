@@ -129,6 +129,8 @@ class WindowsConfigInstallation : public BaseConfigInstallation {
  public:
   static WindowsConfigInstallation install(const std::vector<DataSourceConfig>& data_sources);
   static WindowsConfigInstallation install_driver(const std::shared_ptr<DriverConfig>& driver_config);
+  // Registers the driver in HKLM ODBCINST.INI, as the Windows installer does; requires administrator rights.
+  static WindowsConfigInstallation register_driver(const std::shared_ptr<DriverConfig>& driver_config);
 
   ~WindowsConfigInstallation();
 
@@ -139,8 +141,15 @@ class WindowsConfigInstallation : public BaseConfigInstallation {
   WindowsConfigInstallation& operator=(WindowsConfigInstallation&& other) noexcept;
 
  private:
+  enum class DriverRegistration { UserDsn, Odbcinst };
+
   explicit WindowsConfigInstallation(const std::vector<DataSourceConfig>& data_sources,
-                                     const std::set<std::shared_ptr<DriverConfig>>& driver_configs);
+                                     const std::set<std::shared_ptr<DriverConfig>>& driver_configs,
+                                     DriverRegistration driver_registration);
+
+  void cleanup() noexcept;
+
+  DriverRegistration driver_registration_ = DriverRegistration::UserDsn;
 };
 
 #endif

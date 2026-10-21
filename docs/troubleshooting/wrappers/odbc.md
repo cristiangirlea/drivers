@@ -257,7 +257,13 @@ persists the same connection keys used everywhere else — `SERVER`, `UID`,
 Driver logging is configured through `sf.odbc.ini` (`LogLevel`, `LogPath`, …) or
 the troubleshooting env vars — see
 [Runbook §1.2](../../troubleshooting-runbook.md#12-odbc). Legacy ODBC 3.x
-`TRACING` (0–6) in a DSN or connection string is ignored.
+`TRACING` (0–6) in a DSN or connection string is ignored, and connect posts a
+SQLSTATE `01000` warning that names `LogLevel` in `sf.odbc.ini`. The setup dialog
+neither shows nor removes a stored `TRACING` value. To clear the warning, delete
+the `TRACING` value from the DSN's registry key —
+`HKEY_CURRENT_USER\SOFTWARE\ODBC\ODBC.INI\<DSN>` for a User DSN,
+`HKEY_LOCAL_MACHINE\SOFTWARE\ODBC\ODBC.INI\<DSN>` for a System DSN — or, on
+Linux and macOS, the `TRACING` line from the DSN's `odbc.ini` section.
 
 Two things are deliberately **not** written to the stored DSN
 (`odbc/src/setup_common.rs`):

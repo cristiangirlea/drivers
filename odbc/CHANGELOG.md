@@ -5,9 +5,11 @@
 Changes:
 
 - Changed `SQLDriverConnect` so unrecognized connection-string keywords are reported with a local `01S00` warning and are not forwarded to the server. Recognized session parameters are sent to the server.
+- Changed the leftover ODBC 3.x `TRACING` keyword in a DSN or connection string to post a SQLSTATE `01000` deprecation warning on connect that names `LogLevel` in `sf.odbc.ini`; the keyword still has no effect. (snowflakedb/drivers#2806)
 
 Bug fixes:
 
+- Fixed saving a Windows DSN through the setup dialog or `ConfigDSN` (including `Add-OdbcDsn`) failing with "Failed to save DSN configuration." or a `FALSE` return; saving now leaves a stored `TRACING` value in place. (snowflakedb/drivers#2806)
 - Fixed `SQLDriverConnect` so `ODBC_QUERY_RESULT_FORMAT` is sent to the server and selects the session query result format.
 - Fixed `SQLTables` so the `SQL_ALL_CATALOGS` and `SQL_ALL_SCHEMAS` listings return the account's catalogs or schemas when `TableType` is null or any other value, instead of an empty result.
 

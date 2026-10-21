@@ -22,21 +22,6 @@
 using Catch::Matchers::ContainsSubstring;
 using pg_utils::TempTestDir;
 
-namespace {
-
-std::string joined_text_for_state(const std::vector<DiagRec>& records, const std::string& sql_state) {
-  std::string text;
-  for (const auto& rec : records) {
-    if (rec.sqlState == sql_state) {
-      text += rec.messageText;
-      text += '\n';
-    }
-  }
-  return text;
-}
-
-}  // namespace
-
 TEST_CASE("should warn on deprecated connection-string logging keys only in the new driver",
           "[e2e][logging][connection][BD#154]") {
   // Given a live connection string plus leftover 3.x logging keys. The new driver

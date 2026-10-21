@@ -227,17 +227,6 @@ const TypeInfoRow* find_type_name(const std::vector<TypeInfoRow>& rows, const ch
   return nullptr;
 }
 
-std::string joined_text_for_state(const std::vector<DiagRec>& records, const std::string& sql_state) {
-  std::string text;
-  for (const auto& rec : records) {
-    if (rec.sqlState == sql_state) {
-      text += rec.messageText;
-      text += '\n';
-    }
-  }
-  return text;
-}
-
 }  // namespace
 
 TEST_CASE("should report SQL_VARCHAR for every string column when MapToLongVarchar is unset",

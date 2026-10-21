@@ -151,17 +151,6 @@ ColumnsMeta sqlcolumns_row(Connection& conn, const std::string& column) {
   return row;
 }
 
-std::string joined_text_for_state(const std::vector<DiagRec>& records, const std::string& sql_state) {
-  std::string text;
-  for (const auto& rec : records) {
-    if (rec.sqlState == sql_state) {
-      text += rec.messageText;
-      text += '\n';
-    }
-  }
-  return text;
-}
-
 }  // namespace
 
 TEST_CASE("should report session-max sizes when DEFAULT_VARCHAR_SIZE and DEFAULT_BINARY_SIZE are unset",

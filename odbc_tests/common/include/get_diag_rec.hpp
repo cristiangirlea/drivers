@@ -31,4 +31,16 @@ inline std::string get_sqlstate(const HandleWrapper& handle_wrapper) {
   return get_sqlstate(handle_wrapper.getType(), handle_wrapper.getHandle());
 }
 
+// Message texts of every record with the given SQLSTATE, one per line.
+inline std::string joined_text_for_state(const std::vector<DiagRec>& records, const std::string& sql_state) {
+  std::string text;
+  for (const auto& rec : records) {
+    if (rec.sqlState == sql_state) {
+      text += rec.messageText;
+      text += '\n';
+    }
+  }
+  return text;
+}
+
 #endif  // GET_DIAG_REC_HPP
