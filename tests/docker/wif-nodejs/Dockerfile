@@ -1,4 +1,4 @@
-FROM node:22-bookworm
+FROM node:24-bookworm
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -9,13 +9,6 @@ RUN apt-get update \
     pkg-config \
     libssl-dev \
   && rm -rf /var/lib/apt/lists/*
-
-# npm 10.x (the version bundled with Node 22) crashes on `npm install`
-# with "Cannot read properties of null (reading 'edgesOut')". npm 11
-# does not hit it. https://github.com/npm/cli/issues/9787
-# TODO: Remove this once npm fixes the bug, so the build runs on the npm that
-# ships with Node — matching how most users install the driver.
-RUN npm install -g npm@11
 
 ENV RUSTUP_HOME=/root/.rustup \
     CARGO_HOME=/root/.cargo \

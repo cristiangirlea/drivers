@@ -3,7 +3,7 @@
 # Builds the Node.js WIF artifact inside the linux/amd64 container that
 # tests/auth/run_wif_local.sh starts. Reads the repo from /source (read-only)
 # and leaves tests/auth/wif/artifacts/nodejs_wif.tar.gz in /artifacts.
-# Apt, npm 11, and rustup come from tests/docker/wif-nodejs/Dockerfile.
+# Apt and rustup come from tests/docker/wif-nodejs/Dockerfile.
 
 set -euo pipefail
 

@@ -30,14 +30,6 @@ fi
 
 cd "${WORKSPACE_ROOT}/nodejs"
 
-# npm 10.x (the version bundled with Node 22) crashes on `npm install`
-# with "Cannot read properties of null (reading 'edgesOut')". npm 11
-# does not hit it. https://github.com/npm/cli/issues/9787
-# TODO: Remove this once npm fixes the bug, so the build runs on the npm that
-# ships with Node — matching how most users install the driver.
-echo "=== Upgrading npm ==="
-npm install -g npm@11
-
 echo "=== Installing Node.js dependencies ==="
 npm install
 
