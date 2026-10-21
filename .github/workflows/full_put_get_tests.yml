@@ -15,15 +15,15 @@ name: full_put_get_tests
 #   build_python_wheel  → uploads wheel, downloaded by the 3 cloud entries
 #   build_odbc_driver   → uploads libsfodbc.so, downloaded by the 3 cloud
 #                         entries (each still builds the C++ test harness)
-#   build_jdbc_bridge   → uploads libjdbc_bridge.so, downloaded by the 3
-#                         cloud entries (each still runs Gradle for
-#                         jdbc/src/test/java/net/snowflake/jdbc/e2e/put_get/)
 #   core_put_get        → matrix entries each build sf_core test binaries;
 #                         distributing those as artifacts is fragile, so we
 #                         rely on the shared `core-test` cargo cache instead
 #                         of a separate build job.
 #   nodejs_put_get      → matrix entries each build the native core via the
 #                         e2e globalSetup
+#
+# JDBC is excluded. The `test-jdbc.yml` matrix already runs put/get tests
+# on AWS, GCP, and Azure.
 
 env:
   UV_DEFAULT_INDEX: "https://pypi.org/simple"
@@ -196,62 +196,6 @@ jobs:
         with:
           mode: save
           shared-key: odbc
-          registry-cache-hit: ${{ steps.rust-cache.outputs.registry-cache-hit }}
-          target-cache-hit: ${{ steps.rust-cache.outputs.target-cache-hit }}
-
-  # Single Linux jdbc_bridge build, shared across the 3 cloud entries.
-  # libjdbc_bridge.so is cloud-agnostic and loaded via CORE_PATH. Cache keys
-  # match test-jdbc.yml (cargo shared-key `jdbc`, jdbc-bridge-cache suffix
-  # `debug-default`, line-tables-only debug) so a warm main-CI library is
-  # reused. Gradle, JDK 21, and Java protobuf generation stay on each cloud
-  # entry: generateProtobuf shells out to `cargo run --bin proto_generator`
-  # from the test task, the same way test-jdbc.yml does.
-  build_jdbc_bridge:
-    needs: gate
-    runs-on: ubuntu-latest
-    env:
-      CARGO_TERM_COLOR: always
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      CARGO_PROFILE_TEST_DEBUG: line-tables-only
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: JDBC bridge cache
-        id: jdbc-bridge-cache
-        uses: ./.github/actions/jdbc-bridge-cache
-        with:
-          path: target/debug/libjdbc_bridge.so
-          key-suffix: debug-default
-
-      - name: Restore Rust cache
-        id: rust-cache
-        if: steps.jdbc-bridge-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: ./.github/actions/cargo-cache
-        with:
-          mode: restore
-          shared-key: "jdbc"
-
-      - name: Build jdbc_bridge
-        if: steps.jdbc-bridge-cache.outputs.cache-hit != 'true'
-        run: cargo build --locked --package jdbc_bridge
-
-      - name: Upload jdbc_bridge
-        uses: actions/upload-artifact@v7
-        with:
-          name: jdbc-bridge-full-put-get-tests
-          path: target/debug/libjdbc_bridge.so
-          if-no-files-found: error
-
-      - name: Save Rust cache
-        if: always() && steps.jdbc-bridge-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 20
-        continue-on-error: true
-        uses: ./.github/actions/cargo-cache
-        with:
-          mode: save
-          slim-mode: aggressive
-          shared-key: "jdbc"
           registry-cache-hit: ${{ steps.rust-cache.outputs.registry-cache-hit }}
           target-cache-hit: ${{ steps.rust-cache.outputs.target-cache-hit }}
 
@@ -587,102 +531,3 @@ jobs:
           shared-key: nodejs
           registry-cache-hit: ${{ steps.rust-cache.outputs.registry-cache-hit }}
           target-cache-hit: ${{ steps.rust-cache.outputs.target-cache-hit }}
-
-  jdbc_put_get:
-    needs: build_jdbc_bridge
-    strategy:
-      fail-fast: false
-      matrix:
-        cloud_provider: [aws, gcp, azure]
-    runs-on: ubuntu-latest
-    name: jdbc_put_get (linux x64, java21, ${{ matrix.cloud_provider }})
-    env:
-      CARGO_TERM_COLOR: always
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      CARGO_PROFILE_TEST_DEBUG: line-tables-only
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Restore Gradle cache
-        id: gradle-cache
-        continue-on-error: true
-        uses: actions/cache/restore@v6
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-jdbc-${{ hashFiles('jdbc/**/*.gradle*', 'jdbc/**/gradle-wrapper.properties', 'jdbc/gradle.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-jdbc-
-            ${{ runner.os }}-gradle-
-
-      - name: Restore generated protobuf Java
-        id: protobuf-gen-cache
-        continue-on-error: true
-        uses: actions/cache/restore@v6
-        with:
-          path: jdbc/src/main/java/net/snowflake/client/internal/unicore/protobuf_gen
-          key: jdbc-protobuf-gen-${{ hashFiles('protobuf/**', 'proto_generator/Cargo.toml', 'proto_generator/Cargo.lock', 'proto_generator/src/**', 'Cargo.lock') }}
-
-      - name: Download jdbc_bridge
-        uses: actions/download-artifact@v8
-        with:
-          name: jdbc-bridge-full-put-get-tests
-          path: target/debug
-
-      - name: Decode secrets
-        run: ./scripts/decode_secrets.sh ${{ matrix.cloud_provider }}
-        env:
-          PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
-          PARAMETERS_JSON_AWS: ${{ secrets.PARAMETERS_JSON_AWS }}
-          PARAMETERS_JSON_GCP: ${{ secrets.PARAMETERS_JSON_GCP }}
-          PARAMETERS_JSON_AZURE: ${{ secrets.PARAMETERS_JSON_AZURE }}
-
-      # JDK 21 Temurin is the LTS cell test-jdbc.yml already runs on aws, gcp,
-      # and azure. --tests limits Gradle to the put_get package. CLOUD_PROVIDER
-      # is this lane's cloud, so @EnabledOnGCP methods run only on gcp.
-      - name: Run JDBC put/get tests
-        run: |
-          ls -l target/debug/
-          export PARAMETER_PATH=$(pwd)/parameters.json
-          export CORE_PATH=$(pwd)/target/debug/libjdbc_bridge.so
-          cd jdbc
-          bash ./ci/gradlew_with_resolve_retry.sh test --tests 'net.snowflake.jdbc.e2e.put_get.*'
-        env:
-          CLOUD_PROVIDER: ${{ matrix.cloud_provider }}
-          GRADLE_TEST_RETRY_COUNT: '2'
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: results-putget-jdbc-linux-x64-java21-${{ matrix.cloud_provider }}
-          path: jdbc/build/test-results/test/**/*.xml
-          if-no-files-found: warn
-
-      - name: Save generated protobuf Java
-        if: always() && steps.protobuf-gen-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@v6
-        with:
-          path: jdbc/src/main/java/net/snowflake/client/internal/unicore/protobuf_gen
-          key: jdbc-protobuf-gen-${{ hashFiles('protobuf/**', 'proto_generator/Cargo.toml', 'proto_generator/Cargo.lock', 'proto_generator/src/**', 'Cargo.lock') }}
-
-      - name: Save Gradle cache
-        if: always() && steps.gradle-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        timeout-minutes: 10
-        env:
-          ZSTD_NBTHREADS: '2'
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-jdbc-${{ hashFiles('jdbc/**/*.gradle*', 'jdbc/**/gradle-wrapper.properties', 'jdbc/gradle.properties') }}
