@@ -1,0 +1,162 @@
+queries:
+- index: 0
+  original: "CREATE LOCAL TEMPORARY TABLE \"XT01_E5B0BC14_436C_44F4_9582_E3784773B5DA_1_Connect_CheckCreateTempTableCap\" (\n\t\"COL\" INTEGER\n\t) ON COMMIT PRESERVE ROWS"
+  mapped: "CREATE LOCAL TEMPORARY TABLE \"XT01_E5B0BC14_436C_44F4_9582_E3784773B5DA_1_Connect_CheckCreateTempTableCap\" (\n\t\"COL\" INTEGER\n\t) ON COMMIT PRESERVE ROWS"
+- index: 1
+  original: DROP TABLE "XT01_E5B0BC14_436C_44F4_9582_E3784773B5DA_1_Connect_CheckCreateTempTableCap"
+  mapped: DROP TABLE "XT01_E5B0BC14_436C_44F4_9582_E3784773B5DA_1_Connect_CheckCreateTempTableCap"
+- index: 2
+  original: |-
+    SELECT "COL"
+    FROM (SELECT 1 AS "COL") AS "SUBQUERY"
+  mapped: |-
+    SELECT "COL"
+    FROM (SELECT 1 AS "COL") AS "SUBQUERY"
+- index: 3
+  original: |-
+    SELECT TOP 1 "COL"
+    FROM (SELECT 1 AS "COL") AS "CHECKTOP"
+  mapped: |-
+    SELECT TOP 1 "COL"
+    FROM (SELECT 1 AS "COL") AS "CHECKTOP"
+- index: 4
+  original: |-
+    SELECT "SUBCOL" AS "COL"
+    FROM (
+      SELECT 1 AS "SUBCOL"
+    ) "SUBQUERY"
+    GROUP BY 1
+  mapped: |-
+    SELECT "SUBCOL" AS "COL"
+    FROM (
+      SELECT 1 AS "SUBCOL"
+    ) "SUBQUERY"
+    GROUP BY 1
+- index: 5
+  original: |-
+    SELECT "SUBCOL" AS "COL"
+    FROM (
+      SELECT 1 AS "SUBCOL"
+    ) "SUBQUERY"
+    GROUP BY 2
+  mapped: |-
+    SELECT "SUBCOL" AS "COL"
+    FROM (
+      SELECT 1 AS "SUBCOL"
+    ) "SUBQUERY"
+    GROUP BY 2
+- index: 6
+  original: |-
+    SELECT *
+    INTO "XT01_E5B0BC14_436C_44F4_9582_E3784773B5DA_2_Connect_CheckSelectIntoCap"
+    FROM (SELECT 1 AS COL) AS CHECKTEMP
+  mapped: |-
+    SELECT *
+    INTO "XT01_E5B0BC14_436C_44F4_9582_E3784773B5DA_2_Connect_CheckSelectIntoCap"
+    FROM (SELECT 1 AS COL) AS CHECKTEMP
+- index: 7
+  original: DROP TABLE "XT01_E5B0BC14_436C_44F4_9582_E3784773B5DA_2_Connect_CheckSelectIntoCap"
+  mapped: DROP TABLE "XT01_E5B0BC14_436C_44F4_9582_E3784773B5DA_2_Connect_CheckSelectIntoCap"
+- index: 8
+  original: SELECT 1
+  mapped: SELECT 1
+- index: 9
+  original: SELECT 1
+  mapped: SELECT 1
+- index: 10
+  original: "CREATE LOCAL TEMPORARY TABLE \"XT01_23CB0B93_C47B_407B_A962_6C3CB0EE4B07_1_Connect_CheckCreateTempTableCap\" (\n\t\"COL\" INTEGER\n\t) ON COMMIT PRESERVE ROWS"
+  mapped: "CREATE LOCAL TEMPORARY TABLE \"XT01_23CB0B93_C47B_407B_A962_6C3CB0EE4B07_1_Connect_CheckCreateTempTableCap\" (\n\t\"COL\" INTEGER\n\t) ON COMMIT PRESERVE ROWS"
+- index: 11
+  original: DROP TABLE "XT01_23CB0B93_C47B_407B_A962_6C3CB0EE4B07_1_Connect_CheckCreateTempTableCap"
+  mapped: DROP TABLE "XT01_23CB0B93_C47B_407B_A962_6C3CB0EE4B07_1_Connect_CheckCreateTempTableCap"
+- index: 12
+  original: |-
+    SELECT "COL"
+    FROM (SELECT 1 AS "COL") AS "SUBQUERY"
+  mapped: |-
+    SELECT "COL"
+    FROM (SELECT 1 AS "COL") AS "SUBQUERY"
+- index: 13
+  original: |-
+    SELECT TOP 1 "COL"
+    FROM (SELECT 1 AS "COL") AS "CHECKTOP"
+  mapped: |-
+    SELECT TOP 1 "COL"
+    FROM (SELECT 1 AS "COL") AS "CHECKTOP"
+- index: 14
+  original: |-
+    SELECT "SUBCOL" AS "COL"
+    FROM (
+      SELECT 1 AS "SUBCOL"
+    ) "SUBQUERY"
+    GROUP BY 1
+  mapped: |-
+    SELECT "SUBCOL" AS "COL"
+    FROM (
+      SELECT 1 AS "SUBCOL"
+    ) "SUBQUERY"
+    GROUP BY 1
+- index: 15
+  original: |-
+    SELECT "SUBCOL" AS "COL"
+    FROM (
+      SELECT 1 AS "SUBCOL"
+    ) "SUBQUERY"
+    GROUP BY 2
+  mapped: |-
+    SELECT "SUBCOL" AS "COL"
+    FROM (
+      SELECT 1 AS "SUBCOL"
+    ) "SUBQUERY"
+    GROUP BY 2
+- index: 16
+  original: |-
+    SELECT *
+    INTO "XT01_23CB0B93_C47B_407B_A962_6C3CB0EE4B07_2_Connect_CheckSelectIntoCap"
+    FROM (SELECT 1 AS COL) AS CHECKTEMP
+  mapped: |-
+    SELECT *
+    INTO "XT01_23CB0B93_C47B_407B_A962_6C3CB0EE4B07_2_Connect_CheckSelectIntoCap"
+    FROM (SELECT 1 AS COL) AS CHECKTEMP
+- index: 17
+  original: DROP TABLE "XT01_23CB0B93_C47B_407B_A962_6C3CB0EE4B07_2_Connect_CheckSelectIntoCap"
+  mapped: DROP TABLE "XT01_23CB0B93_C47B_407B_A962_6C3CB0EE4B07_2_Connect_CheckSelectIntoCap"
+- index: 18
+  original: |-
+    SELECT *
+    FROM "DATATYPETESTS"."ALLDATATYPESNAV"
+  mapped: |-
+    SELECT *
+    FROM "DATATYPETESTS"."ALLDATATYPESNAV"
+- index: 19
+  original: SELECT 1
+  mapped: SELECT 1
+- index: 20
+  original: |-
+    SELECT SUM(1) AS "COL"
+    FROM "DATATYPETESTS"."ALLDATATYPESNAV" "ALLDATATYPESNAV"
+    HAVING COUNT(1)>0
+  mapped: |-
+    SELECT SUM(1) AS "COL"
+    FROM "DATATYPETESTS"."ALLDATATYPESNAV" "ALLDATATYPESNAV"
+    HAVING COUNT(1)>0
+- index: 21
+  original: |-
+    SELECT "ALLDATATYPESNAV"."ROWKIND" AS "ROWKIND"
+    FROM "DATATYPETESTS"."ALLDATATYPESNAV" "ALLDATATYPESNAV"
+    GROUP BY 1
+  mapped: |-
+    SELECT "ALLDATATYPESNAV"."ROWKIND" AS "ROWKIND"
+    FROM "DATATYPETESTS"."ALLDATATYPESNAV" "ALLDATATYPESNAV"
+    GROUP BY 1
+- index: 22
+  original: |-
+    SELECT "ALLDATATYPESNAV"."ROWKIND" AS "ROWKIND",
+      SUM("ALLDATATYPESNAV"."INTVAL") AS "sum_INTVAL_ok"
+    FROM "DATATYPETESTS"."ALLDATATYPESNAV" "ALLDATATYPESNAV"
+    GROUP BY 1
+  mapped: |-
+    SELECT "ALLDATATYPESNAV"."ROWKIND" AS "ROWKIND",
+      SUM("ALLDATATYPESNAV"."INTVAL") AS "sum_INTVAL_ok"
+    FROM "DATATYPETESTS"."ALLDATATYPESNAV" "ALLDATATYPESNAV"
+    GROUP BY 1
