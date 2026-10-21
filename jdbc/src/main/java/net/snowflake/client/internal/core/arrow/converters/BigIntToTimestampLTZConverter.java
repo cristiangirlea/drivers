@@ -11,7 +11,6 @@ import net.snowflake.client.internal.api.implementation.exception.SFSQLException
 import net.snowflake.client.internal.core.arrow.ArrowDateUtil;
 import net.snowflake.client.internal.core.arrow.ArrowResultUtil;
 import net.snowflake.client.internal.util.SnowflakeUtil;
-import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.ValueVector;
 
 /**
@@ -22,14 +21,14 @@ import org.apache.arrow.vector.ValueVector;
  * BigIntToTimestampLTZConverter}.
  */
 public class BigIntToTimestampLTZConverter extends AbstractArrowVectorConverter {
-  private final BigIntVector bigIntVector;
+  private final ArrowBackedColumn bigColumn;
   private final int scale;
-  private final ByteBuffer byteBuf = ByteBuffer.allocate(BigIntVector.TYPE_WIDTH);
+  private final ByteBuffer byteBuf = ByteBuffer.allocate(Long.BYTES);
 
   public BigIntToTimestampLTZConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context, int scale) {
     super(SnowflakeType.TIMESTAMP_LTZ.name(), fieldVector, columnIndex, context);
-    this.bigIntVector = (BigIntVector) fieldVector;
+    this.bigColumn = ArrowBackedColumn.wrap(fieldVector);
     this.scale = scale;
   }
 
@@ -50,8 +49,7 @@ public class BigIntToTimestampLTZConverter extends AbstractArrowVectorConverter 
     if (isNull(index)) {
       return null;
     }
-    byteBuf.putLong(
-        0, bigIntVector.getDataBuffer().getLong((long) index * BigIntVector.TYPE_WIDTH));
+    byteBuf.putLong(0, bigColumn.getLong(index));
     return byteBuf.array();
   }
 
@@ -68,7 +66,7 @@ public class BigIntToTimestampLTZConverter extends AbstractArrowVectorConverter 
   }
 
   private Timestamp getTimestamp(int index) {
-    long val = bigIntVector.getDataBuffer().getLong((long) index * BigIntVector.TYPE_WIDTH);
+    long val = bigColumn.getLong(index);
     return ArrowDateUtil.adjustTimestamp(
         ArrowResultUtil.toJavaTimestamp(
             val, scale, context.getSessionTimeZone(), context.isUseSessionTimezone()));

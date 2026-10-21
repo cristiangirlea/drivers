@@ -1,10 +1,12 @@
 package net.snowflake.client.internal.core.arrow.converters;
 
 import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.SmallIntVector;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.complex.StructVector;
 
 /**
  * Reads the Arrow vector a converter already holds. That vector is reused across batches, so each
@@ -19,6 +21,27 @@ final class ArrowBackedColumn {
 
   static ArrowBackedColumn wrap(ValueVector vector) {
     return new ArrowBackedColumn(vector);
+  }
+
+  boolean isNull(int index) {
+    return vector.isNull(index);
+  }
+
+  ArrowBackedColumn child(String name, Class<? extends FieldVector> type) {
+    return wrap(((StructVector) vector).getChild(name, type));
+  }
+
+  long getSigned(int index) {
+    if (vector instanceof TinyIntVector) {
+      return getByte(index);
+    }
+    if (vector instanceof SmallIntVector) {
+      return getShort(index);
+    }
+    if (vector instanceof IntVector) {
+      return getInt(index);
+    }
+    return getLong(index);
   }
 
   byte getByte(int index) {

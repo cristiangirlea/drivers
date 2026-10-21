@@ -15,7 +15,6 @@ import net.snowflake.client.internal.util.SnowflakeUtil;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.ValueVector;
-import org.apache.arrow.vector.complex.StructVector;
 
 /**
  * Converter from a three-field struct ({@code epoch} seconds + {@code fraction} nanos + {@code
@@ -31,10 +30,10 @@ import org.apache.arrow.vector.complex.StructVector;
  * valid timezone index for {@code TIMESTAMP_TZ}, so that branch is dropped here.
  */
 public class ThreeFieldStructToTimestampTZConverter extends AbstractArrowVectorConverter {
-  private final StructVector structVector;
-  private final BigIntVector epochs;
-  private final IntVector fractions;
-  private final IntVector timeZoneIndices;
+  private final ArrowBackedColumn structVector;
+  private final ArrowBackedColumn epochs;
+  private final ArrowBackedColumn fractions;
+  private final ArrowBackedColumn timeZoneIndices;
   private final int scale;
 
   public ThreeFieldStructToTimestampTZConverter(
@@ -42,10 +41,10 @@ public class ThreeFieldStructToTimestampTZConverter extends AbstractArrowVectorC
     // Legacy passes TIMESTAMP_LTZ.name() here; kept verbatim so INVALID_VALUE_CONVERT error
     // messages render identically to snowflake-jdbc.
     super(SnowflakeType.TIMESTAMP_LTZ.name(), fieldVector, columnIndex, context);
-    this.structVector = (StructVector) fieldVector;
-    this.epochs = structVector.getChild(FIELD_NAME_EPOCH, BigIntVector.class);
-    this.fractions = structVector.getChild(FIELD_NAME_FRACTION, IntVector.class);
-    this.timeZoneIndices = structVector.getChild(FIELD_NAME_TIMEZONE, IntVector.class);
+    this.structVector = ArrowBackedColumn.wrap(fieldVector);
+    this.epochs = structVector.child(FIELD_NAME_EPOCH, BigIntVector.class);
+    this.fractions = structVector.child(FIELD_NAME_FRACTION, IntVector.class);
+    this.timeZoneIndices = structVector.child(FIELD_NAME_TIMEZONE, IntVector.class);
     this.scale = scale;
   }
 
@@ -85,16 +84,16 @@ public class ThreeFieldStructToTimestampTZConverter extends AbstractArrowVectorC
   }
 
   private Timestamp getTimestamp(int index, boolean fromToString) {
-    long epoch = epochs.getDataBuffer().getLong((long) index * BigIntVector.TYPE_WIDTH);
-    int fraction = fractions.getDataBuffer().getInt((long) index * IntVector.TYPE_WIDTH);
-    int timeZoneIndex = timeZoneIndices.getDataBuffer().getInt((long) index * IntVector.TYPE_WIDTH);
+    long epoch = epochs.getLong(index);
+    int fraction = fractions.getInt(index);
+    int timeZoneIndex = timeZoneIndices.getInt(index);
     return getTimestamp(
         epoch, fraction, timeZoneIndex, context.isUseSessionTimezone(), fromToString);
   }
 
   /** The fixed-offset zone stored with this value, used for rendering and the returned wrappers. */
   private TimeZone getStoredZone(int index) {
-    int timeZoneIndex = timeZoneIndices.getDataBuffer().getInt((long) index * IntVector.TYPE_WIDTH);
+    int timeZoneIndex = timeZoneIndices.getInt(index);
     return ArrowResultUtil.convertTimezoneIndexToTimeZone(timeZoneIndex);
   }
 

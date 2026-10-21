@@ -12,7 +12,6 @@ import net.snowflake.client.internal.core.arrow.ArrowDateUtil;
 import net.snowflake.client.internal.core.arrow.ArrowResultUtil;
 import net.snowflake.client.internal.jdbc.SnowflakeTimeWithTimezone;
 import net.snowflake.client.internal.util.SnowflakeUtil;
-import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.ValueVector;
 
 /**
@@ -24,14 +23,14 @@ import org.apache.arrow.vector.ValueVector;
 public class BigIntToTimestampNTZConverter extends AbstractArrowVectorConverter {
   private static final TimeZone NTZ = TimeZone.getTimeZone("UTC");
 
-  private final BigIntVector bigIntVector;
+  private final ArrowBackedColumn bigColumn;
   private final int scale;
-  private final ByteBuffer byteBuf = ByteBuffer.allocate(BigIntVector.TYPE_WIDTH);
+  private final ByteBuffer byteBuf = ByteBuffer.allocate(Long.BYTES);
 
   public BigIntToTimestampNTZConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context, int scale) {
     super(SnowflakeType.TIMESTAMP_NTZ.name(), fieldVector, columnIndex, context);
-    this.bigIntVector = (BigIntVector) fieldVector;
+    this.bigColumn = ArrowBackedColumn.wrap(fieldVector);
     this.scale = scale;
   }
 
@@ -52,8 +51,7 @@ public class BigIntToTimestampNTZConverter extends AbstractArrowVectorConverter 
     if (isNull(index)) {
       return null;
     }
-    byteBuf.putLong(
-        0, bigIntVector.getDataBuffer().getLong((long) index * BigIntVector.TYPE_WIDTH));
+    byteBuf.putLong(0, bigColumn.getLong(index));
     return byteBuf.array();
   }
 
@@ -71,7 +69,7 @@ public class BigIntToTimestampNTZConverter extends AbstractArrowVectorConverter 
     if (tz == null) {
       tz = TimeZone.getDefault();
     }
-    long val = bigIntVector.getDataBuffer().getLong((long) index * BigIntVector.TYPE_WIDTH);
+    long val = bigColumn.getLong(index);
     Timestamp ts = ArrowResultUtil.toJavaTimestamp(val, scale);
 
     // Note: honorClientTZForTimestampNTZ is not enabled for the toString method.

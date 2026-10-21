@@ -4,7 +4,6 @@ import java.time.Duration;
 import net.snowflake.client.api.exception.ErrorCode;
 import net.snowflake.client.api.resultset.SnowflakeType;
 import net.snowflake.client.internal.api.implementation.exception.SFSQLException;
-import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.ValueVector;
 
 /**
@@ -15,13 +14,13 @@ import org.apache.arrow.vector.ValueVector;
  */
 public class IntervalDayTimeToDurationConverter extends AbstractArrowVectorConverter {
 
-  private final BigIntVector vector;
+  private final ArrowBackedColumn vector;
   private static final long NANOS_IN_SECOND = 1_000_000_000;
 
   public IntervalDayTimeToDurationConverter(
       ValueVector vector, int columnIndex, DataConversionContext context) {
     super(SnowflakeType.INTERVAL_DAY_TIME.name(), vector, columnIndex, context);
-    this.vector = (BigIntVector) vector;
+    this.vector = ArrowBackedColumn.wrap(vector);
   }
 
   @Override
@@ -29,7 +28,7 @@ public class IntervalDayTimeToDurationConverter extends AbstractArrowVectorConve
     if (isNull(index)) {
       return null;
     }
-    long numNanos = vector.get(index);
+    long numNanos = vector.getLong(index);
     try {
       int sign = Long.signum(numNanos);
       numNanos = Math.abs(numNanos);

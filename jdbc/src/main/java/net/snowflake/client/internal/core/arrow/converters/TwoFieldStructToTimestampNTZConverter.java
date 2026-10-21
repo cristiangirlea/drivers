@@ -14,7 +14,6 @@ import net.snowflake.client.internal.util.SnowflakeUtil;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.ValueVector;
-import org.apache.arrow.vector.complex.StructVector;
 
 /**
  * Converter from a two-field struct ({@code epoch} seconds + {@code fraction} nanos) to {@code
@@ -32,17 +31,17 @@ import org.apache.arrow.vector.complex.StructVector;
 public class TwoFieldStructToTimestampNTZConverter extends AbstractArrowVectorConverter {
   private static final TimeZone NTZ = TimeZone.getTimeZone("UTC");
 
-  private final StructVector structVector;
-  private final BigIntVector epochs;
-  private final IntVector fractions;
+  private final ArrowBackedColumn structVector;
+  private final ArrowBackedColumn epochs;
+  private final ArrowBackedColumn fractions;
   private final int scale;
 
   public TwoFieldStructToTimestampNTZConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context, int scale) {
     super(SnowflakeType.TIMESTAMP_NTZ.name(), fieldVector, columnIndex, context);
-    this.structVector = (StructVector) fieldVector;
-    this.epochs = structVector.getChild(FIELD_NAME_EPOCH, BigIntVector.class);
-    this.fractions = structVector.getChild(FIELD_NAME_FRACTION, IntVector.class);
+    this.structVector = ArrowBackedColumn.wrap(fieldVector);
+    this.epochs = structVector.child(FIELD_NAME_EPOCH, BigIntVector.class);
+    this.fractions = structVector.child(FIELD_NAME_FRACTION, IntVector.class);
     this.scale = scale;
   }
 
@@ -101,8 +100,8 @@ public class TwoFieldStructToTimestampNTZConverter extends AbstractArrowVectorCo
       boolean fromToString,
       boolean treatNTZasUTC,
       boolean useSessionTimezone) {
-    long epoch = epochs.getDataBuffer().getLong((long) index * BigIntVector.TYPE_WIDTH);
-    int fraction = fractions.getDataBuffer().getInt((long) index * IntVector.TYPE_WIDTH);
+    long epoch = epochs.getLong(index);
+    int fraction = fractions.getInt(index);
     return getTimestamp(
         epoch,
         fraction,
