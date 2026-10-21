@@ -271,7 +271,10 @@ impl Connection {
 
 /// Adapts `openExternalBrowserCallback` to the synchronous opener core invokes.
 fn browser_opener_from_js(callback: Function<String, ()>) -> Result<BrowserOpenFn> {
-    let open_in_js = callback.build_threadsafe_function::<String>().build()?;
+    let open_in_js = callback
+        .build_threadsafe_function::<String>()
+        .weak::<true>()
+        .build()?;
     Ok(Arc::new(move |url: &str| {
         let (outcome_tx, outcome_rx) = std::sync::mpsc::sync_channel(1);
         let queued = open_in_js.call_with_return_value(
