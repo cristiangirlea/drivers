@@ -8,7 +8,7 @@ on:
         required: true
         description: >
           JSON object mapping platform keys to Python version arrays.
-          Example: {"linux_x86": ["3.11","3.12","3.13","3.14"], "macos_x86": ["3.11","3.12"], "windows_arm": ["3.11","3.12"]}
+          Example: {"linux_x86": ["3.11","3.12","3.13","3.14","3.14t"], "macos_x86": ["3.11","3.12"], "windows_arm": ["3.11","3.12"]}
           Supported platforms: linux_x86, linux_aarch, macos_x86, macos_arm, windows_x86, windows_arm.
       cold_cache:
         type: boolean
@@ -349,8 +349,14 @@ jobs:
               fi
               yum install -y perl-IPC-Cmd perl-Time-Piece
               for V in $(echo "$PYTHON_VERSIONS_JSON" | python3 -c "import json,sys; [print(v) for v in json.load(sys.stdin)]"); do
-                CP_TAG="cp${V//./}"
-                PY="/opt/python/${CP_TAG}-${CP_TAG}/bin/python"
+                if [[ "$V" == *t ]]; then
+                  _BASE="${V%t}"
+                  _TAG="cp${_BASE//./}"
+                  PY="/opt/python/${_TAG}-${_TAG}t/bin/python"
+                else
+                  CP_TAG="cp${V//./}"
+                  PY="/opt/python/${CP_TAG}-${CP_TAG}/bin/python"
+                fi
                 if [ ! -x "$PY" ]; then
                   echo "Missing manylinux Python at $PY"
                   ls -la /opt/python/
@@ -579,7 +585,15 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_id }}_py3.14
-          path: python/dist/*cp314*.whl
+          path: python/dist/*-cp314-cp314-*.whl
+          if-no-files-found: error
+
+      - name: Upload py3.14t wheel
+        if: contains(fromJSON(matrix.python_versions_json), '3.14t')
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_id }}_py3.14t
+          path: python/dist/*-cp314-cp314t-*.whl
           if-no-files-found: error
 
   # ── Build python_bridge + wheel manually (Windows ARM64) ────────────

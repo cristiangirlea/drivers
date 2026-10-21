@@ -1029,15 +1029,17 @@ class PythonMatrixTests(unittest.TestCase):
         ]
         self.assertEqual(offenders, [])
 
-    def test_freethreading_pr_cell_installs_from_sdist(self) -> None:
-        by_env = {r["hatch_env"]: r for r in self.gha if r["py"] == "3.14t"}
-        self.assertEqual(set(by_env), {"test", "test-native-arrow"})
+    def test_freethreading_pr_cell_installs_from_wheel(self) -> None:
+        rows = [
+            r for r in gm.filter_active(self.gha, "pr")
+            if r["py"] == "3.14t" and not r.get("result_format")
+        ]
+        by_env = {r["hatch_env"]: r for r in rows}
+        self.assertEqual(set(by_env), {"test", "test-native-arrow", "test-pandas"})
         for row in by_env.values():
             self.assertEqual(row["os"], "ubuntu-latest")
             self.assertEqual(row["cloud_provider"], "aws")
-            self.assertEqual(row["trigger_level"], "pr")
-            self.assertNotIn("wheel_artifact", row)
-            self.assertIn(row, gm.filter_active(self.gha, "pr"))
+            self.assertEqual(row["wheel_artifact"], "manylinux_x86_64")
 
     def test_no_python_310(self) -> None:
         offenders = [r for r in self.gha if r["py"] == "3.10"]
@@ -1053,7 +1055,7 @@ class PythonMatrixTests(unittest.TestCase):
         intel_rows = [r for r in self.gha if r["os"] == "macos-15-intel"]
         self.assertTrue(intel_rows, "expected macos-15-intel cells in the python matrix")
         for r in intel_rows:
-            self.assertIn(r["py"], {"3.11", "3.12", "3.13", "3.14"})
+            self.assertIn(r["py"], {"3.11", "3.12", "3.13", "3.14", "3.14t"})
             self.assertEqual(r.get("wheel_artifact"), "macosx_x86_64", r["name"])
 
     def test_windows_arm_at_merge_scope(self) -> None:
@@ -1723,13 +1725,13 @@ class BuildTargetsTests(unittest.TestCase):
         # Updated after cloud rotation was moved into CONSTRAINTS (models/python.py):
         # each PyVersion maps to exactly one cloud, so all versions now appear at
         # nightly for every platform (each runs once against its assigned cloud).
-        # Windows-arm excludes 3.13/3.14 (no CPython win-arm wheel above 3.12).
+        # Windows-arm excludes 3.13, 3.14, and 3.14t (no win-arm wheel for those).
         legacy = {
-            "linux_x86":   {"3.11", "3.12", "3.13", "3.14"},
-            "linux_aarch": {"3.11", "3.12", "3.13", "3.14"},
-            "macos_arm":   {"3.11", "3.12", "3.13", "3.14"},
-            "macos_x86":   {"3.11", "3.12", "3.13", "3.14"},
-            "windows_x86": {"3.11", "3.12", "3.13", "3.14"},
+            "linux_x86":   {"3.11", "3.12", "3.13", "3.14", "3.14t"},
+            "linux_aarch": {"3.11", "3.12", "3.13", "3.14", "3.14t"},
+            "macos_arm":   {"3.11", "3.12", "3.13", "3.14", "3.14t"},
+            "macos_x86":   {"3.11", "3.12", "3.13", "3.14", "3.14t"},
+            "windows_x86": {"3.11", "3.12", "3.13", "3.14", "3.14t"},
             "windows_arm": {"3.11", "3.12"},
         }
         actual = {k: set(v) for k, v in self.targets_nightly.items()}

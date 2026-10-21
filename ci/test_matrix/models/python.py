@@ -36,15 +36,6 @@ def is_valid(c):
         if c["Cloud"] != "aws":                      return False
         if c["PyVersion"] not in ("3.13", "3.14t"):  return False
 
-    # 3.14t installs from the sdist. The Ubuntu x64 AWS `test` and
-    # `test-native-arrow` cells are the only valid combos; the other
-    # platforms have no free-threaded wheel.
-    if c["PyVersion"] == "3.14t":
-        if c["OS"] != "ubuntu":                                 return False
-        if c["Arch"] != "x64":                                  return False
-        if c["Cloud"] != "aws":                                 return False
-        if c["HatchEnv"] not in ("test", "test-native-arrow"):  return False
-
     # Cloud rotation: each Python version is tested against one cloud.
     if c["Cloud"] != _CLOUD_FOR_PY[c["PyVersion"]]:
         return False
@@ -87,6 +78,7 @@ PR_CELLS = [
     {"OS": "windows", "Arch": "x64", "Cloud": "gcp", "PyVersion": "3.14", "HatchEnv": "test"},
     {"OS": "ubuntu",  "Arch": "x64", "Cloud": "aws", "PyVersion": "3.14t", "HatchEnv": "test"},
     {"OS": "ubuntu",  "Arch": "x64", "Cloud": "aws", "PyVersion": "3.14t", "HatchEnv": "test-native-arrow"},
+    {"OS": "ubuntu",  "Arch": "x64", "Cloud": "aws", "PyVersion": "3.14t", "HatchEnv": "test-pandas"},
 ]
 
 MERGE_QUEUE_CELLS = [

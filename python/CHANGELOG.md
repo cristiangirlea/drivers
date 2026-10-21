@@ -2,6 +2,10 @@
 
 ## Upcoming Release
 
+New features:
+
+- Added support for Python 3.14t (free-threaded CPython). (snowflakedb/drivers#2759)
+
 ## 5.0.0 (October 15, 2026)
 
 Breaking changes:
