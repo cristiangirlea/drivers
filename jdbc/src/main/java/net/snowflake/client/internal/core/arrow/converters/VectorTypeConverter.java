@@ -6,17 +6,17 @@ import org.apache.arrow.vector.complex.FixedSizeListVector;
 
 public class VectorTypeConverter extends AbstractArrowVectorConverter {
 
-  private final FixedSizeListVector vector;
+  private final ArrowBackedColumn vector;
 
   public VectorTypeConverter(
       FixedSizeListVector valueVector, int vectorIndex, DataConversionContext context) {
     super(SnowflakeType.ARRAY.name(), valueVector, vectorIndex, context);
-    this.vector = valueVector;
+    this.vector = ArrowBackedColumn.wrap(valueVector);
   }
 
   @Override
   public String toString(int index) {
-    List<?> object = vector.getObject(index);
+    List<?> object = (List<?>) vector.getObject(index);
     if (object == null) {
       return null;
     }
@@ -40,6 +40,6 @@ public class VectorTypeConverter extends AbstractArrowVectorConverter {
 
   @Override
   public List<?> toList(int index) {
-    return vector.getObject(index);
+    return (List<?>) vector.getObject(index);
   }
 }

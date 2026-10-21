@@ -1,11 +1,16 @@
 package net.snowflake.client.internal.core.arrow.converters;
 
 import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.BitVector;
+import org.apache.arrow.vector.DateDayVector;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.SmallIntVector;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.VarBinaryVector;
+import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.complex.StructVector;
 
 /**
@@ -55,8 +60,35 @@ final class ArrowBackedColumn {
   }
 
   int getInt(int index) {
+    if (vector instanceof DateDayVector) {
+      DateDayVector values = (DateDayVector) vector;
+      return values.getDataBuffer().getInt((long) index * DateDayVector.TYPE_WIDTH);
+    }
     IntVector values = (IntVector) vector;
     return values.getDataBuffer().getInt((long) index * IntVector.TYPE_WIDTH);
+  }
+
+  double getDouble(int index) {
+    Float8Vector values = (Float8Vector) vector;
+    return values.getDataBuffer().getDouble((long) index * Float8Vector.TYPE_WIDTH);
+  }
+
+  int getBit(int index) {
+    BitVector values = (BitVector) vector;
+    int byteIndex = index >> 3;
+    byte bits = values.getDataBuffer().getByte(byteIndex);
+    return (bits >> (index & 7)) & 0x01;
+  }
+
+  byte[] getBytes(int index) {
+    if (vector instanceof VarCharVector) {
+      return ((VarCharVector) vector).get(index);
+    }
+    return ((VarBinaryVector) vector).get(index);
+  }
+
+  Object getObject(int index) {
+    return vector.getObject(index);
   }
 
   long getLong(int index) {

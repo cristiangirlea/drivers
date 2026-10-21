@@ -6,26 +6,25 @@ import net.snowflake.client.api.exception.ErrorCode;
 import net.snowflake.client.api.resultset.SnowflakeType;
 import net.snowflake.client.internal.api.implementation.exception.SFSQLException;
 import net.snowflake.client.internal.util.SnowflakeUtil;
-import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.ValueVector;
 
-/** Convert from Arrow Float8Vector to Real. */
+/** Converts an Arrow float64 column to REAL. */
 public class DoubleToRealConverter extends AbstractArrowVectorConverter {
-  private final Float8Vector float8Vector;
-  private final ByteBuffer byteBuf = ByteBuffer.allocate(Float8Vector.TYPE_WIDTH);
+  private final ArrowBackedColumn floatColumn;
+  private final ByteBuffer byteBuf = ByteBuffer.allocate(Double.BYTES);
 
   public DoubleToRealConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context) {
     super(SnowflakeType.REAL.name(), fieldVector, columnIndex, context);
-    this.float8Vector = (Float8Vector) fieldVector;
+    this.floatColumn = ArrowBackedColumn.wrap(fieldVector);
   }
 
   @Override
   public double toDouble(int index) {
-    if (float8Vector.isNull(index)) {
+    if (isNull(index)) {
       return 0;
     }
-    return float8Vector.getDataBuffer().getDouble(index * Float8Vector.TYPE_WIDTH);
+    return floatColumn.getDouble(index);
   }
 
   @Override

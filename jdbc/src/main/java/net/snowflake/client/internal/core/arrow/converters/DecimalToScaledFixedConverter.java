@@ -8,14 +8,13 @@ import net.snowflake.client.api.exception.ErrorCode;
 import net.snowflake.client.api.resultset.SnowflakeType;
 import net.snowflake.client.internal.api.implementation.exception.SFSQLException;
 import net.snowflake.client.internal.util.SnowflakeUtil;
-import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.ValueVector;
 
 /**
  * Data vector whose snowflake logical type is fixed while represented as a BigDecimal value vector.
  */
 public class DecimalToScaledFixedConverter extends AbstractArrowVectorConverter {
-  protected final DecimalVector decimalVector;
+  protected final ArrowBackedColumn decimalColumn;
 
   public DecimalToScaledFixedConverter(
       ValueVector fieldVector, int vectorIndex, DataConversionContext context) {
@@ -28,7 +27,7 @@ public class DecimalToScaledFixedConverter extends AbstractArrowVectorConverter 
         fieldVector,
         vectorIndex,
         context);
-    decimalVector = (DecimalVector) fieldVector;
+    decimalColumn = ArrowBackedColumn.wrap(fieldVector);
   }
 
   @Override
@@ -147,7 +146,7 @@ public class DecimalToScaledFixedConverter extends AbstractArrowVectorConverter 
 
   @Override
   public BigDecimal toBigDecimal(int index) {
-    return decimalVector.getObject(index);
+    return (BigDecimal) decimalColumn.getObject(index);
   }
 
   @Override

@@ -12,7 +12,6 @@ import net.snowflake.client.api.resultset.SnowflakeType;
 import net.snowflake.client.internal.api.implementation.exception.SFSQLException;
 import net.snowflake.client.internal.util.SnowflakeUtil;
 import org.apache.arrow.vector.ValueVector;
-import org.apache.arrow.vector.VarCharVector;
 
 public class VarCharConverter extends AbstractArrowVectorConverter {
   // Parsed once and cloned per call: SimpleDateFormat is not thread-safe and re-parsing the pattern
@@ -20,11 +19,11 @@ public class VarCharConverter extends AbstractArrowVectorConverter {
   // parsing, mirror snowflake-jdbc's VarCharConverter exactly.
   private static final SimpleDateFormat DATE_FORMAT_TEMPLATE = new SimpleDateFormat("yyyy-MM-dd");
 
-  private final VarCharVector varCharVector;
+  private final ArrowBackedColumn varCharColumn;
 
   public VarCharConverter(ValueVector valueVector, int columnIndex, DataConversionContext context) {
     super(SnowflakeType.TEXT.name(), valueVector, columnIndex, context);
-    this.varCharVector = (VarCharVector) valueVector;
+    this.varCharColumn = ArrowBackedColumn.wrap(valueVector);
   }
 
   @Override
@@ -35,7 +34,7 @@ public class VarCharConverter extends AbstractArrowVectorConverter {
 
   @Override
   public byte[] toBytes(int index) {
-    return isNull(index) ? null : varCharVector.get(index);
+    return isNull(index) ? null : varCharColumn.getBytes(index);
   }
 
   @Override

@@ -6,20 +6,19 @@ import net.snowflake.client.internal.api.implementation.exception.SFSQLException
 import net.snowflake.client.internal.util.BinaryOutputFormat;
 import net.snowflake.client.internal.util.SnowflakeUtil;
 import org.apache.arrow.vector.ValueVector;
-import org.apache.arrow.vector.VarBinaryVector;
 
 public class VarBinaryToBinaryConverter extends AbstractArrowVectorConverter {
-  private final VarBinaryVector varBinaryVector;
+  private final ArrowBackedColumn binaryColumn;
 
   public VarBinaryToBinaryConverter(
       ValueVector valueVector, int columnIndex, DataConversionContext context) {
     super(SnowflakeType.BINARY.name(), valueVector, columnIndex, context);
-    this.varBinaryVector = (VarBinaryVector) valueVector;
+    this.binaryColumn = ArrowBackedColumn.wrap(valueVector);
   }
 
   @Override
   public byte[] toBytes(int index) {
-    return isNull(index) ? null : varBinaryVector.get(index);
+    return isNull(index) ? null : binaryColumn.getBytes(index);
   }
 
   @Override

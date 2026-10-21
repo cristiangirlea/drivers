@@ -2,11 +2,10 @@ package net.snowflake.client.internal.core.arrow.converters;
 
 import java.math.BigDecimal;
 import net.snowflake.client.api.resultset.SnowflakeType;
-import org.apache.arrow.vector.BitVector;
 import org.apache.arrow.vector.ValueVector;
 
 public class BitToBooleanConverter extends AbstractArrowVectorConverter {
-  private BitVector bitVector;
+  private final ArrowBackedColumn bitColumn;
 
   /**
    * @param fieldVector ValueVector
@@ -16,17 +15,11 @@ public class BitToBooleanConverter extends AbstractArrowVectorConverter {
   public BitToBooleanConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context) {
     super(SnowflakeType.BOOLEAN.name(), fieldVector, columnIndex, context);
-    this.bitVector = (BitVector) fieldVector;
+    this.bitColumn = ArrowBackedColumn.wrap(fieldVector);
   }
 
   private int getBit(int index) {
-    // read a bit from the bitVector
-    // first find the byte value
-    final int byteIndex = index >> 3;
-    final byte b = bitVector.getDataBuffer().getByte(byteIndex);
-    // then get the bit value
-    final int bitIndex = index & 7;
-    return (b >> bitIndex) & 0x01;
+    return bitColumn.getBit(index);
   }
 
   @Override

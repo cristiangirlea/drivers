@@ -8,15 +8,14 @@ import net.snowflake.client.api.resultset.SnowflakeType;
 import net.snowflake.client.internal.api.implementation.exception.SFSQLException;
 import net.snowflake.client.internal.util.SnowflakeUtil;
 import org.apache.arrow.vector.ValueVector;
-import org.apache.arrow.vector.complex.StructVector;
 
 class DecfloatToDecimalConverter extends AbstractArrowVectorConverter {
 
-  private StructVector vector;
+  private final ArrowBackedColumn column;
 
   public DecfloatToDecimalConverter(ValueVector vector, int idx, DataConversionContext context) {
     super(SnowflakeType.DECFLOAT.name(), vector, idx, context);
-    this.vector = (StructVector) vector;
+    this.column = ArrowBackedColumn.wrap(vector);
   }
 
   @Override
@@ -24,7 +23,7 @@ class DecfloatToDecimalConverter extends AbstractArrowVectorConverter {
     if (isNull(index)) {
       return null;
     }
-    Map<String, Object> value = (Map<String, Object>) vector.getObject(index);
+    Map<String, Object> value = (Map<String, Object>) column.getObject(index);
     byte[] significandBytes = (byte[]) value.get("significand");
     short exponent = (short) value.get("exponent");
     BigInteger significand = new BigInteger(significandBytes);

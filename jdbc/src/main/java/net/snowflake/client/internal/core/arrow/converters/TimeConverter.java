@@ -12,28 +12,29 @@ import net.snowflake.client.internal.common.core.SnowflakeDateTimeFormat;
 import net.snowflake.client.internal.core.arrow.ArrowResultUtil;
 import net.snowflake.client.internal.jdbc.SnowflakeTimestampWithTimezone;
 import net.snowflake.client.internal.util.SnowflakeUtil;
-import org.apache.arrow.vector.BaseIntVector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.ValueVector;
 
 public class TimeConverter extends AbstractArrowVectorConverter {
   private static final long MILLIS_PER_NANO = 1_000_000L;
 
-  private final BaseIntVector intVector;
+  private final ArrowBackedColumn timeColumn;
+  private final boolean rawIntBytes;
   private final int scale;
   private final SnowflakeDateTimeFormat timeFormatter;
 
   public TimeConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context, int scale) {
     super(SnowflakeType.TIME.name(), fieldVector, columnIndex, context);
-    this.intVector = (BaseIntVector) fieldVector;
+    this.timeColumn = ArrowBackedColumn.wrap(fieldVector);
+    this.rawIntBytes = fieldVector instanceof IntVector;
     this.scale = scale;
     this.timeFormatter = context.getTimeFormatter();
   }
 
   private LocalTime getLocalTime(int index) {
     return LocalTime.ofNanoOfDay(
-        intVector.getValueAsLong(index) * ArrowResultUtil.powerOfTen(9 - scale));
+        timeColumn.getSigned(index) * ArrowResultUtil.powerOfTen(9 - scale));
   }
 
   @Override
@@ -108,10 +109,9 @@ public class TimeConverter extends AbstractArrowVectorConverter {
     }
     // Only INT-backed TIME exposes raw bytes; BIGINT-backed TIME has no toBytes and falls through
     // to the unsupported-conversion error.
-    if (intVector instanceof IntVector) {
-      ByteBuffer byteBuf = ByteBuffer.allocate(IntVector.TYPE_WIDTH);
-      byteBuf.putInt(
-          0, ((IntVector) intVector).getDataBuffer().getInt((long) index * IntVector.TYPE_WIDTH));
+    if (rawIntBytes) {
+      ByteBuffer byteBuf = ByteBuffer.allocate(Integer.BYTES);
+      byteBuf.putInt(0, timeColumn.getInt(index));
       return byteBuf.array();
     }
     return super.toBytes(index);
