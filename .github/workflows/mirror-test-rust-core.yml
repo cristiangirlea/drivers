@@ -39,6 +39,11 @@ jobs:
       - name: Run sf_params_spec tests
         run: cargo test --locked --package sf_params_spec
 
+      - name: Run vendored rustls-webpki tests
+        run: cargo test --locked --manifest-path sf_core/third_party/rustls-webpki/Cargo.toml --features aws-lc-rs
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+
       - name: Save Rust cache
         if: always()
         timeout-minutes: 20

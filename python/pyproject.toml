@@ -103,6 +103,7 @@ exclude = [
     "src/snowflake/connector/_internal/nanoarrow_cpp/scripts",
     # Exclude Rust build artifacts
     "sf_core/target/",
+    "sf_core/third_party/rustls-webpki/target/",
     "python_bridge/target/",
     "sf_params_spec/target/",
     "sf_types/target/",
@@ -111,6 +112,9 @@ exclude = [
     "sf_core/tests/e2e/",
     "sf_core/tests/integration/",
     "sf_core/tests/*.rs",
+    # Vendored rustls-webpki unit-test fixtures. The library build does not read them.
+    "sf_core/third_party/rustls-webpki/tests/",
+    "sf_core/third_party/rustls-webpki/third-party/",
 ]
 
 # Individual files need force-include (file symlinks are not dereferenced)

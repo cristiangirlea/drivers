@@ -124,6 +124,41 @@ jobs:
       - name: Run sf_params_spec tests
         run: cargo test --locked --package sf_params_spec
 
+  # rustls-webpki under sf_core/third_party is a separate workspace, so this
+  # job runs its unit tests. aws-lc-rs is the backend the non-FIPS driver
+  # links, and the distrusted-SPKI tests compile only with that feature.
+  test_rustls_webpki:
+    if: inputs.run_rust_core
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Restore Rust cache
+        id: rust-cache
+        continue-on-error: true
+        uses: ./.github/actions/cargo-cache
+        with:
+          mode: restore
+          shared-key: rustls-webpki
+
+      - name: Run vendored rustls-webpki tests
+        run: cargo test --locked --manifest-path sf_core/third_party/rustls-webpki/Cargo.toml --features aws-lc-rs
+
+      - name: Save Rust cache
+        if: always()
+        timeout-minutes: 10
+        continue-on-error: true
+        uses: ./.github/actions/cargo-cache
+        with:
+          mode: save
+          shared-key: rustls-webpki
+          registry-cache-hit: ${{ steps.rust-cache.outputs.registry-cache-hit }}
+          target-cache-hit: ${{ steps.rust-cache.outputs.target-cache-hit }}
+
   fips_smoke:
     needs: load-fips-matrix
     if: inputs.run_rust_core && needs.load-fips-matrix.outputs.matrix != '[]'
@@ -742,15 +777,16 @@ jobs:
           target-cache-hit: ${{ steps.rust-cache.outputs.target-cache-hit }}
 
   # Non-FIPS ARM64 build and test.
-  # On windows-11-arm, fips fails for aarch64-pc-windows-msvc with:
-  #   library machine type 'x64' conflicts with target machine type 'ARM64'
-  # Evidence points to aws-lc-fips-sys Windows build env setup:
-  # builder/printenv.bat calls vcvarsall.bat x64, overriding ARM64 toolchain env.
-  # This lane keeps fips disabled.
-  # Upstream issue: https://github.com/aws/aws-lc-rs/issues/1057
-  # Repro job: https://github.com/snowflakedb/drivers/actions/runs/22779459689/job/66081199710
-  # The FIPS smoke matrix excludes Windows ARM because it is not a supported
-  # FIPS release target.
+  # Locked aws-lc-fips-sys 0.13.17 passes the host/target architecture to
+  # vcvarsall.bat (arm64 on windows-11-arm). The previous hardcode of x64 is
+  # https://github.com/aws/aws-lc-rs/issues/1057, closed as fixed in
+  # aws-lc-rs 1.16.3. The last observed failure is still that older pin
+  # (aws-lc-fips-sys 0.13.12, LNK1112 x64 vs ARM64):
+  # https://github.com/snowflakedb/drivers/actions/runs/22779459689/job/66081199710
+  # This lane leaves fips disabled until a windows-11-arm fips build with
+  # 0.13.17 links. The FIPS smoke matrix excludes Windows ARM because it is
+  # not a supported FIPS release target. Tracking is F12 in
+  # docs/NOMIRROR/fips-compliance-tracker.md.
   # Coverage note: tests gated behind cfg(feature = "fips") are
   # tls::fips_tests and the e2e connectivity smoke in fips_connectivity:
   # SELECT 1 with CRL off, SELECT 1 with CRL enabled, and a small PUT and GET.
@@ -1181,7 +1217,7 @@ jobs:
             --parameter-path "${{ github.workspace }}/parameters.json"
 
   rust-core-status:
-    needs: [load-fips-matrix, format, test_sf_params_spec, fips_smoke, fips_artifacts, date_output_format_parity, test, test_windows_arm64_nonfips, test_windows_x86, cleanup_rust_core]
+    needs: [load-fips-matrix, format, test_sf_params_spec, test_rustls_webpki, fips_smoke, fips_artifacts, date_output_format_parity, test, test_windows_arm64_nonfips, test_windows_x86, cleanup_rust_core]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1196,6 +1232,7 @@ jobs:
           if [[ "${{ needs.format.result }}" =~ ^(failure|cancelled)$ ]] || \
              [[ "${{ needs.load-fips-matrix.result }}" =~ ^(failure|cancelled)$ ]] || \
              [[ "${{ needs.test_sf_params_spec.result }}" =~ ^(failure|cancelled)$ ]] || \
+             [[ "${{ needs.test_rustls_webpki.result }}" =~ ^(failure|cancelled)$ ]] || \
              [[ "${{ needs.fips_smoke.result }}" =~ ^(failure|cancelled)$ ]] || \
              [[ "${{ needs.fips_artifacts.result }}" =~ ^(failure|cancelled)$ ]] || \
              [[ "${{ needs.date_output_format_parity.result }}" =~ ^(failure|cancelled)$ ]] || \
@@ -1206,6 +1243,7 @@ jobs:
             echo "  - format: ${{ needs.format.result }}"
             echo "  - load-fips-matrix: ${{ needs.load-fips-matrix.result }}"
             echo "  - test_sf_params_spec: ${{ needs.test_sf_params_spec.result }}"
+            echo "  - test_rustls_webpki: ${{ needs.test_rustls_webpki.result }}"
             echo "  - fips_smoke: ${{ needs.fips_smoke.result }}"
             echo "  - fips_artifacts: ${{ needs.fips_artifacts.result }}"
             echo "  - date_output_format_parity: ${{ needs.date_output_format_parity.result }}"

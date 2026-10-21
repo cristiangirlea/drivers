@@ -4,6 +4,8 @@ jdbc/bin/
 jdbc/decorator-processor/bin/
 .idea/
 target/
+# rustls-webpki under sf_core/third_party is its own cargo workspace.
+sf_core/third_party/rustls-webpki/target/
 parameters*.json
 cmake-build*
 .venv

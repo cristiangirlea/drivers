@@ -73,14 +73,67 @@ runs:
         "CMAKE=$cmakeExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         $env:CMAKE = $cmakeExe
 
-        $paths = $env:PATH -split ';' | Where-Object {
-          $_ -and $_ -notmatch '\\Strawberry\\c\\bin\\?$'
+        # aws-lc-fips-sys runs vcvarsall.bat on every Windows FIPS build.
+        # vcvarsall prepends its directories with `set PATH=...;%PATH%`, and
+        # cmd.exe rejects that assignment past 8191 characters. The runner
+        # image puts unrelated toolchains on PATH; combined with the MSVC
+        # prefix plus the directories Cargo and npm add later, the nested
+        # call no longer fits. Strawberry\c\bin, Git\ucrt64, and mingw64
+        # also ship gcc, which shadows cl.exe.
+        $drop = @(
+          '\\Strawberry\\c\\bin\\?$'
+          '\\Git\\ucrt64\\'
+          '\\mingw64\\'
+          '\\MongoDB\\'
+          '\\aliyun-cli\\?$'
+          '\\NSIS\\'
+          '\\tools\\zstd\\?$'
+          '\\Mercurial\\'
+          '\\hostedtoolcache\\windows\\stack\\'
+          '\\cabal\\'
+          '\\ghcup\\'
+          '\\MySQL\\'
+          '\\R\\R-'
+          '\\SeleniumWebDrivers\\'
+          '\\sbt\\'
+          '\\pipx_bin\\?$'
+          '\\go\\1\.24'
+          '\\Python\\3\.12'
+          '\\Ruby\\'
+          '\\kotlinc\\'
+          '\\Java_Temurin'
+          '\\ImageMagick'
+          '\\Azure\\CLI'
+          '\\ProgramData\\kind\\?$'
+          '\\Web Platform Installer\\'
+          '\\TortoiseSVN\\'
+          'SQL Server\\'
+          '\\Windows Performance Toolkit\\'
+          'WiX Toolset'
+          '\\pulumi\\'
+          '\\apache-maven'
+          'Service Fabric'
+          '\\ServiceFabric'
+          '\\tools\\php\\?$'
+          '\\Amazon\\'
+          '\\mongosh\\'
+          '\(x86\)\\LLVM\\'
+          '\\\.dotnet\\tools\\?$'
+          '\\Program Files\\dotnet\\?$'
+          '\\WindowsApps\\?$'
+        ) -join '|'
+        $seen = @{}
+        $paths = foreach ($dir in ($env:PATH -split ';')) {
+          if (-not $dir -or $dir -match $drop) { continue }
+          $key = $dir.TrimEnd('\').ToLowerInvariant()
+          if ($seen.ContainsKey($key)) { continue }
+          $seen[$key] = $true
+          $dir
         }
         if (Test-Path "C:\Strawberry\perl\bin") {
           $paths = @("C:\Strawberry\perl\bin") + $paths
         }
-        # The filtered PATH drops Strawberry\c\bin because its gcc shadows
-        # MSVC. When nasm.exe is still absent, this downloads a pinned zip.
+        # When nasm.exe is still absent, this downloads a pinned zip.
         # The Chocolatey community feed is not used; it has returned 406,
         # 503, and 504 for the nasm package.
         $nasmDir = "C:\Program Files\NASM"
@@ -174,3 +227,12 @@ runs:
         ninja --version
         go version
         cl
+
+        # vcvarsall prepends about 1600 characters. The Node addon build adds
+        # about 2500 more (npm shims and Cargo's aws-lc-fips-sys artifact
+        # directories) before that crate runs vcvarsall again. cmd.exe rejects
+        # the resulting `set PATH=` line past 8191 characters.
+        $maxPathChars = 8191 - 1600 - 2500
+        if ($env:PATH.Length -gt $maxPathChars) {
+          throw "PATH is $($env:PATH.Length) characters; nested vcvarsall.bat needs it at or below $maxPathChars"
+        }
