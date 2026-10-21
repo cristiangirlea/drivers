@@ -155,6 +155,7 @@ Internal changes:
 - Narrowed platform detection's config and entry point to crate visibility. (snowflakedb/drivers#2690)
 - Changed the CRL download client to reuse the driver's cached system root certificates. (snowflakedb/drivers#2691)
 - Changed custom-CA revocation checks to load system root certificates on a blocking thread, and only for the first CRL cache. (snowflakedb/drivers#2691)
+- Changed storage clients to retry a failed system root certificate load on a blocking thread. (snowflakedb/drivers#2706)
 
 Test improvements:
 

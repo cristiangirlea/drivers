@@ -131,7 +131,7 @@ pub async fn upload_to_gcs_or_skip(
     tx: TransferCtx<'_>,
 ) -> Result<UploadStatus, GcsUploadError> {
     let scheduler = &super::scheduler_for(tx, multipart);
-    let client = create_gcs_client(stage_info, tx.http_client)?;
+    let client = create_gcs_client(stage_info, tx.http_client).await?;
     let key = format!("{}{filename}", stage_info.key_prefix);
     let using_presigned_url = stage_info.presigned_url.is_some();
     let refresher = tx.refresher;
@@ -342,7 +342,7 @@ async fn gcs_get_with_refresh(
     per_file_index: usize,
     tx: TransferCtx<'_>,
 ) -> Result<reqwest::Response, GcsDownloadError> {
-    let client = create_gcs_client(stage_info, tx.http_client)?;
+    let client = create_gcs_client(stage_info, tx.http_client).await?;
     let key = format!("{}{filename}", stage_info.key_prefix);
     // Either presigned-URL source enables the 400-handling: the URL may
     // have expired and reissuing it produces a fresh signature. The
@@ -946,18 +946,19 @@ fn map_http_error(e: HttpError) -> GcsRequestError {
 // (`gcs_get_with_refresh`) call sites — if client construction is ever split
 // per direction (as `create_s3_client`'s `provider_name` param anticipates),
 // add the equivalent GCS case here too.
-fn create_gcs_client(
+async fn create_gcs_client(
     stage_info: &StageInfo,
     shared: Option<&reqwest::Client>,
 ) -> Result<reqwest::Client, GcsRequestError> {
-    cloud_http::shared_or_build_client(shared, || cloud_http::build_gcs_client(stage_info)).map_err(
-        |e| {
+    match shared {
+        Some(client) => Ok(client.clone()),
+        None => cloud_http::build_gcs_client(stage_info).await.map_err(|e| {
             ClientSetupSnafu {
                 detail: e.to_string(),
             }
             .build()
-        },
-    )
+        }),
+    }
 }
 
 /// Constructs the GCS URL and extracts the bearer token from stage info.
@@ -1288,7 +1289,7 @@ async fn gcs_try_ranged_download(
     spill_target: cloud_http::CloudSpillTarget<'_>,
     tx: TransferCtx<'_>,
 ) -> Result<Option<CloudStreamingDownload>, GcsDownloadError> {
-    let client = create_gcs_client(stage_info, tx.http_client)?;
+    let client = create_gcs_client(stage_info, tx.http_client).await?;
     let key = format!("{}{filename}", stage_info.key_prefix);
 
     let make_attempt = |base: &StageInfo| {
@@ -2745,7 +2746,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None).unwrap();
+        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None)
+            .await
+            .unwrap();
         let url = format!("{}/my-bucket/prefix/file.csv", server.uri());
         let result = check_file_exists_gcs(
             &client,
@@ -2772,7 +2775,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None).unwrap();
+        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None)
+            .await
+            .unwrap();
         let url = format!("{}/my-bucket/prefix/file.csv", server.uri());
         let result = check_file_exists_gcs(
             &client,
@@ -2800,7 +2805,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None).unwrap();
+        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None)
+            .await
+            .unwrap();
         let url = format!("{}/my-bucket/prefix/file.csv", server.uri());
         let result = check_file_exists_gcs(
             &client,
@@ -2822,7 +2829,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None).unwrap();
+        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None)
+            .await
+            .unwrap();
         let url = format!("{}/my-bucket/prefix/file.csv", server.uri());
         let result = check_file_exists_gcs(
             &client,
@@ -2847,7 +2856,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None).unwrap();
+        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None)
+            .await
+            .unwrap();
         let url = format!("{}/my-bucket/prefix/file.csv", server.uri());
         let result = check_file_exists_gcs(
             &client,
@@ -2876,7 +2887,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None).unwrap();
+        let client = create_gcs_client(&make_stage_for_mock(&server.uri()), None)
+            .await
+            .unwrap();
         let url = format!("{}/my-bucket/prefix/file.csv", server.uri());
         let result = check_file_exists_gcs(
             &client,

@@ -585,12 +585,35 @@ pub(crate) fn configure_storage_client_builder(
     crl_manager: CrlManager,
     roots: RootStoreProvider,
 ) -> Result<ClientBuilder, TlsError> {
+    configure_storage_from_snapshot(builder, tls_config, proxy, crl_manager, &roots.snapshot())
+}
+
+pub(crate) async fn configure_storage_client_builder_prepared(
+    builder: ClientBuilder,
+    tls_config: &TlsConfig,
+    proxy: Option<&ProxyConfig>,
+    crl_manager: CrlManager,
+    roots: RootStoreProvider,
+) -> Result<ClientBuilder, TlsError> {
+    let snapshot = roots
+        .prepare_native_if_needed(tls_config, crl_manager.has_cache())
+        .await?;
+    configure_storage_from_snapshot(builder, tls_config, proxy, crl_manager, &snapshot)
+}
+
+fn configure_storage_from_snapshot(
+    builder: ClientBuilder,
+    tls_config: &TlsConfig,
+    proxy: Option<&ProxyConfig>,
+    crl_manager: CrlManager,
+    roots: &RootStoreSnapshot<'_>,
+) -> Result<ClientBuilder, TlsError> {
     configure_tls_builder(
         builder,
         tls_config,
         proxy,
         crl_manager,
-        &roots.snapshot(),
+        roots,
         ClientAlpn::Http1Only,
     )
     .map(ClientBuilder::no_gzip)
@@ -1206,6 +1229,52 @@ mod tests {
             FAILED_NATIVE_LOADS.load(std::sync::atomic::Ordering::Relaxed),
             1
         );
+        assert!(provider.0.roots.get().is_none());
+    }
+
+    static STORAGE_LOAD_THREADS: std::sync::Mutex<Vec<std::thread::ThreadId>> =
+        std::sync::Mutex::new(Vec::new());
+
+    fn record_failed_native_load_thread() -> rustls_native_certs::CertificateResult {
+        STORAGE_LOAD_THREADS
+            .lock()
+            .expect("load-thread list")
+            .push(std::thread::current().id());
+        empty_native_error()
+    }
+
+    #[tokio::test]
+    async fn failed_native_load_at_login_retries_storage_off_the_worker() {
+        STORAGE_LOAD_THREADS
+            .lock()
+            .expect("load-thread list")
+            .clear();
+        let worker = std::thread::current().id();
+        let provider = RootStoreProvider::with_native_loader(record_failed_native_load_thread);
+        build_tls_client_and_rustls_config(
+            &TlsConfig::default(),
+            Some(&ProxyConfig::default()),
+            CrlManager::new(),
+            provider.clone(),
+            None,
+            false,
+        )
+        .await
+        .expect("login client");
+        configure_storage_client_builder_prepared(
+            Client::builder(),
+            &TlsConfig::default(),
+            Some(&ProxyConfig::default()),
+            CrlManager::new(),
+            provider.clone(),
+        )
+        .await
+        .expect("storage client")
+        .build()
+        .expect("build storage client");
+        let threads = STORAGE_LOAD_THREADS.lock().expect("load-thread list");
+        assert_eq!(threads.len(), 2);
+        assert!(threads.iter().all(|id| *id != worker));
         assert!(provider.0.roots.get().is_none());
     }
 
