@@ -126,4 +126,4 @@ PYTHON_REFERENCE_DRIVER_VERSION='==4.3.0' hatch run reference:test
 ## References
 
 - [PEP 249 - Python Database API Specification v2.0](https://peps.python.org/pep-0249/)
-- [Python Database API Specification v2.0](https://www.python.org/dev/peps/pep-0249/) 
+- [Python Database API Specification v2.0](https://www.python.org/dev/peps/pep-0249/)
