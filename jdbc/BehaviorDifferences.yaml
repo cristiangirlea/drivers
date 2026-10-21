@@ -1345,3 +1345,33 @@ behavior_differences:
       snowflake-jdbc folds every local WIF connect rejection into one flow-error identity.
       The universal driver keeps the shared sf_core parameter-validation kinds used by the
       other wrappers.
+  76:
+    name: "Auto-compressed PUT does not store Content-Encoding gzip"
+    status: allowed
+    type: bugfix
+    reviewed: false
+    is_breaking_change: false
+    impact: low
+    old_driver_behavior: |
+      PUT of an auto-compressed file to GCS with GCS_USE_DOWNSCOPED_CREDENTIAL=true
+      stores Content-Encoding gzip on the object. PUT of an auto-compressed file to
+      S3 stores Content-Encoding gzip on the object. PUT through a GCS presigned URL
+      stores a blank Content-Encoding when the file is gzip.
+    new_driver_behavior: |
+      A GCS PUT sends no Content-Encoding header, including a bearer-token upload of
+      a gzip payload. An S3 PUT sends no Content-Encoding. GET and COPY still treat
+      the file as gzip from its name and the compression recorded by PUT.
+    description: |
+      GCS decompressive transcoding returns a Content-Encoding gzip object
+      uncompressed to a client that does not send Accept-Encoding gzip. The old
+      driver's presigned-URL upload replaces gzip with a blank header value. The
+      new driver leaves the header off. Both leave the object unmarked as gzip.
+      S3 does not transcode. The old driver still stores gzip there. Downloading
+      that file does not decompress it again from that metadata. Clients that
+      honor Content-Encoding would decompress the body. The new driver omits the
+      header.
+    status_rationale: |
+      Storing gzip would make GCS serve uncompressed bytes for a .gz object and
+      would make some S3 clients do the same. The common GCS presigned path of the
+      old driver already stores a blank encoding. COPY and driver GET use the
+      compression registered with the file.

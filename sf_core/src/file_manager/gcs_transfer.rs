@@ -781,7 +781,6 @@ async fn upload_to_gcs(
             .apply_to(
                 client
                     .put(&url_owned)
-                    .header("content-encoding", "")
                     .header(reqwest::header::CONTENT_LENGTH, content_length)
                     .body(body),
             );
@@ -3048,6 +3047,59 @@ mod tests {
             Some(digest.as_str())
         );
         assert_eq!(authorization(put), "Bearer fake-token");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn gcs_put_omits_content_encoding() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/my-bucket/prefix/file.csv"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let digest = "0".repeat(64);
+        let status = upload_to_gcs_or_skip(
+            PreparedUpload {
+                source: crate::file_manager::types::PreparedSource::Bytes(Bytes::from_static(
+                    b"hello world",
+                )),
+                digest: digest.clone(),
+                cse: None,
+            },
+            &make_stage_for_mock(&server.uri()),
+            "file.csv",
+            /* overwrite */ true,
+            /* skip_upload_on_content_match */ false,
+            MultipartParams::default(),
+            &test_policy(
+                /* using_presigned_url */ false,
+                DEFAULT_PUT_GET_MAX_ATTEMPTS,
+            ),
+            TransferCtx::default(),
+        )
+        .await
+        .expect("bearer-token GCS PUT should succeed against the mock");
+        assert_eq!(status, UploadStatus::Uploaded);
+
+        let received = server.received_requests().await.unwrap();
+        let put = received
+            .iter()
+            .find(|r| r.method.as_str() == "PUT")
+            .expect("a PUT request should have been received");
+        assert_eq!(
+            put.headers
+                .get(GCS_META_SFC_DIGEST)
+                .and_then(|v| v.to_str().ok()),
+            Some(digest.as_str()),
+            "sfc-digest must still be present"
+        );
+        assert!(
+            put.headers.get(reqwest::header::CONTENT_ENCODING).is_none(),
+            "Content-Encoding must be absent on GCS PUT (got {:?})",
+            put.headers.get(reqwest::header::CONTENT_ENCODING)
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

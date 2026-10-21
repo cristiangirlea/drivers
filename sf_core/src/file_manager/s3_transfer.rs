@@ -2858,28 +2858,10 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let stage_info = StageInfo {
-            location_type: crate::file_manager::types::LocationType::S3,
-            bucket: "test-bucket".to_string(),
-            key_prefix: "prefix/".to_string(),
-            region: "us-east-1".to_string(),
-            creds: s3_creds("AKIA-TEST"),
-            endpoint: Some(mock.uri()),
-            presigned_url: None,
-            use_virtual_url: false,
-            use_regional_url: false,
-            use_s3_regional_url: false,
-            tls_config: crate::tls::config::TlsConfig::default(),
-            crl_manager: crate::crl::CrlManager::new(),
-            root_store_provider: crate::tls::RootStoreProvider::new(),
-            proxy_config: crate::tls::config::ProxyConfig::default(),
-            storage_account: None,
-        };
-
         // overwrite=true, skip_upload_on_content_match=false skips the HEAD probe.
         upload_to_s3_or_skip(
             prepared,
-            &stage_info,
+            &mp_stage(mock.uri()),
             "f.dat",
             true,
             false,
@@ -2903,6 +2885,57 @@ mod tests {
             cse: None,
         })
         .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn put_object_omits_content_encoding() {
+        let mock = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&mock)
+            .await;
+
+        let digest = "0".repeat(64);
+        upload_to_s3_or_skip(
+            PreparedUpload {
+                source: crate::file_manager::types::PreparedSource::Bytes(Bytes::from_static(
+                    b"hello world",
+                )),
+                digest: digest.clone(),
+                cse: None,
+            },
+            &mp_stage(mock.uri()),
+            "f.dat",
+            true,
+            false,
+            &base_policy(),
+            MultipartParams::default(),
+            TransferCtx::default(),
+        )
+        .await
+        .expect("upload should succeed against the mock");
+
+        let received = mock
+            .received_requests()
+            .await
+            .expect("mock should have captured requests");
+        let put = received
+            .iter()
+            .find(|r| r.method.as_str() == "PUT")
+            .expect("a PUT request should have been received");
+        assert_eq!(
+            put.headers
+                .get("x-amz-meta-sfc-digest")
+                .and_then(|v| v.to_str().ok()),
+            Some(digest.as_str()),
+            "sfc-digest metadata must still be present"
+        );
+        assert!(
+            put.headers.get("content-encoding").is_none(),
+            "Content-Encoding must be absent on S3 PUT (got {:?})",
+            put.headers.get("content-encoding")
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2945,24 +2978,6 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let stage_info = StageInfo {
-            location_type: crate::file_manager::types::LocationType::S3,
-            bucket: "test-bucket".to_string(),
-            key_prefix: "prefix/".to_string(),
-            region: "us-east-1".to_string(),
-            creds: s3_creds("AKIA-TEST"),
-            endpoint: Some(mock.uri()),
-            presigned_url: None,
-            use_virtual_url: false,
-            use_regional_url: false,
-            use_s3_regional_url: false,
-            storage_account: None,
-            tls_config: crate::tls::config::TlsConfig::default(),
-            crl_manager: crate::crl::CrlManager::new(),
-            root_store_provider: crate::tls::RootStoreProvider::new(),
-            proxy_config: crate::tls::config::ProxyConfig::default(),
-        };
-
         tokio::time::timeout(
             std::time::Duration::from_secs(20),
             upload_to_s3_or_skip(
@@ -2971,7 +2986,7 @@ mod tests {
                     digest: "0".repeat(64),
                     cse: None,
                 },
-                &stage_info,
+                &mp_stage(mock.uri()),
                 "f.dat",
                 true,
                 false,
@@ -3050,24 +3065,6 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let stage_info = StageInfo {
-            location_type: crate::file_manager::types::LocationType::S3,
-            bucket: "test-bucket".to_string(),
-            key_prefix: "prefix/".to_string(),
-            region: "us-east-1".to_string(),
-            creds: s3_creds("AKIA-TEST"),
-            endpoint: Some(mock.uri()),
-            presigned_url: None,
-            use_virtual_url: false,
-            use_regional_url: false,
-            use_s3_regional_url: false,
-            tls_config: crate::tls::config::TlsConfig::default(),
-            crl_manager: crate::crl::CrlManager::new(),
-            root_store_provider: crate::tls::RootStoreProvider::new(),
-            proxy_config: crate::tls::config::ProxyConfig::default(),
-            storage_account: None,
-        };
-
         upload_to_s3_or_skip(
             PreparedUpload {
                 source: crate::file_manager::types::PreparedSource::Bytes(plaintext.into()),
@@ -3077,7 +3074,7 @@ mod tests {
                     encryptor,
                 }),
             },
-            &stage_info,
+            &mp_stage(mock.uri()),
             "f.dat",
             true,
             false,
