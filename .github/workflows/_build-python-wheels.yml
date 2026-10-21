@@ -347,7 +347,9 @@ jobs:
               else
                 echo "Using cached rustup toolchain"
               fi
-              yum install -y perl-IPC-Cmd perl-Time-Piece
+              # Compiling OpenSSL from source is what needs perl-IPC-Cmd. This
+              # build does not. yum also refreshes the image EPEL repo, and
+              # those mirrors currently 404 the repodata.
               for V in $(echo "$PYTHON_VERSIONS_JSON" | python3 -c "import json,sys; [print(v) for v in json.load(sys.stdin)]"); do
                 if [[ "$V" == *t ]]; then
                   _BASE="${V%t}"
@@ -528,7 +530,7 @@ jobs:
       - name: Check wheels with delocate (macOS)
         if: runner.os == 'macOS'
         run: |
-          pip install delocate
+          uv tool install delocate
           for whl in python/dist/*.whl; do
             echo "=== $(basename $whl) ==="
             delocate-listdeps "$whl"
