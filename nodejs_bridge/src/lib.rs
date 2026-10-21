@@ -18,6 +18,7 @@ mod class_constructors;
 mod connection;
 mod date_format;
 mod error;
+mod logging;
 mod query;
 mod query_status;
 mod rows;
@@ -35,6 +36,9 @@ pub use session_state::SessionState;
 pub use statement::{Column, Statement};
 pub use token_cache::set_custom_credential_manager;
 
+use logging::JsLogging;
+use napi::bindgen_prelude::{Function, Object};
+use napi::{Env, Result};
 use napi_derive::napi;
 use sf_core::apis::database_driver_v1::{DatabaseDriverV1, DriverProviders, WrapperPresets};
 use sf_core::token_cache::TokenCache;
@@ -45,24 +49,23 @@ static BRIDGE: LazyLock<Bridge> = LazyLock::new(Bridge::new);
 struct Bridge {
     driver: DatabaseDriverV1,
     token_cache: Arc<token_cache::NodeTokenCache>,
+    logging: JsLogging,
 }
 
 impl Bridge {
     fn new() -> Self {
-        // TODO:
-        // Implement proper bidirectional logger with configurable level, as is done by other driver wrappers.
-        let _ = tracing_subscriber::fmt()
-            .with_writer(std::io::stderr)
-            .with_max_level(tracing::Level::DEBUG)
-            .try_init();
         let token_cache = Arc::new(token_cache::NodeTokenCache::new());
+        let logging = JsLogging::default();
+        let log_manager = logging.log_manager();
         Self {
             driver: DatabaseDriverV1::with_providers(DriverProviders {
+                log_manager,
                 wrapper_presets: WrapperPresets::nodejs(),
                 token_cache: Some(Arc::clone(&token_cache) as Arc<dyn TokenCache>),
                 ..Default::default()
             }),
             token_cache,
+            logging,
         }
     }
 }
@@ -78,4 +81,27 @@ pub fn get_fips_status() -> FipsStatus {
     FipsStatus {
         is_fips: status.is_fips,
     }
+}
+
+/// Connects the bridge to the JS side. The package entry point calls it once at load.
+///
+/// `classConstructors` holds the JS classes the bridge creates but napi cannot define:
+/// `SnowflakeDate` extends `Date`, and napi classes can't extend built-in JS classes, so the
+/// class lives in TypeScript and the bridge calls its constructor. The constructors are
+/// stored per JS env, because napi references don't work across envs.
+///
+/// `logCallback` is how log records reach the JS logger. Every record goes through sf_core
+/// first, including records logged in JS, which JS sends in with `logEvent`. sf_core writes
+/// them to its own outputs, such as the troubleshooting file, then calls `logCallback`
+/// with each record allowed by the level set with `setLogLevel`.
+#[napi(
+    ts_args_type = "classConstructors: { SnowflakeDate: new (epochMillis: number, nanos: number, scale: number, timezone: string | number, format: string) => unknown }, logCallback: (arg: LogEvent) => void"
+)]
+pub fn init_bridge(
+    env: Env,
+    class_constructors: Object,
+    log_callback: Function<'static, logging::LogEvent, ()>,
+) -> Result<()> {
+    class_constructors::register_class_constructors(env, class_constructors)?;
+    logging::init(log_callback)
 }

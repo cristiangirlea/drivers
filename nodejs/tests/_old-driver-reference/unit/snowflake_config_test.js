@@ -3,7 +3,6 @@ const snowflake = require('./../../lib/snowflake').default;
 const ErrorCodes = require('./../../lib/errors').codes;
 const Logger = require('./../../lib/logger');
 const GlobalConfig = require('./../../lib/global_config');
-const LOG_LEVEL_TAGS = require('./../../lib/logger/core').LOG_LEVEL_TAGS;
 
 describe('Snowflake Configure Tests', function () {
   let originalConfig;
@@ -25,11 +24,6 @@ describe('Snowflake Configure Tests', function () {
 
   describe('Test invalid arguments', function () {
     const negativeTestCases = [
-      {
-        name: 'invalid logLevel',
-        options: { logLevel: 'unsupported' },
-        errorCode: ErrorCodes.ERR_GLOBAL_CONFIGURE_INVALID_LOG_LEVEL,
-      },
       {
         name: 'invalid disableOCSPChecks',
         options: { disableOCSPChecks: 'unsupported' },
@@ -85,42 +79,6 @@ describe('Snowflake Configure Tests', function () {
 
   describe('Test valid arguments', function () {
     const testCases = [
-      {
-        name: 'logLevel off',
-        options: {
-          logLevel: LOG_LEVEL_TAGS.OFF,
-        },
-      },
-      {
-        name: 'logLevel error',
-        options: {
-          logLevel: LOG_LEVEL_TAGS.ERROR,
-        },
-      },
-      {
-        name: 'logLevel warn',
-        options: {
-          logLevel: LOG_LEVEL_TAGS.WARN,
-        },
-      },
-      {
-        name: 'logLevel debug',
-        options: {
-          logLevel: LOG_LEVEL_TAGS.DEBUG,
-        },
-      },
-      {
-        name: 'logLevel info',
-        options: {
-          logLevel: LOG_LEVEL_TAGS.INFO,
-        },
-      },
-      {
-        name: 'logLevel trace',
-        options: {
-          logLevel: LOG_LEVEL_TAGS.TRACE,
-        },
-      },
       {
         name: 'disableOCSPChecks false',
         options: {

@@ -30,6 +30,14 @@ const RESOURCES = {
     });
     return connect();
   },
+  customLogger: () => {
+    const log = () => {};
+    snowflake.configure({
+      logLevel: 'DEBUG',
+      customLogger: { error: log, warn: log, info: log, debug: log, trace: log },
+    });
+    return connect();
+  },
   clientSessionKeepAlive: () => connect({ clientSessionKeepAlive: true }),
 };
 

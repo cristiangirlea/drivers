@@ -3054,7 +3054,6 @@ dependencies = [
  "snafu 0.8.9",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uuid",
 ]
 

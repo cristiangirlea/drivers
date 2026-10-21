@@ -3,6 +3,9 @@ import ErrorCode from './constants/ErrorCode.js';
 import ErrorMessage from './constants/ErrorMessage.js';
 import { coreSetCustomCredentialManager } from './core/index.js';
 import { invalidParameterError } from './error.js';
+import { defaultLogger } from './logging/default-logger.js';
+import { parseLogLevel, type LogLevel } from './logging/log-level.js';
+import { logger, logRouter, type SnowflakeLogger } from './logging/logger.js';
 
 export type CustomParser = (rawColumnValue: string) => any;
 export type XMlParserConfigOption = X2jOptions;
@@ -15,6 +18,36 @@ export interface CustomCredentialManager {
 }
 
 export interface ConfigureOptions {
+  /**
+   * Log verbosity for driver and core records, in any letter case. `TRACE` logs the same
+   * records as `DEBUG`, and `OFF` logs nothing.
+   *
+   * @default 'INFO'
+   */
+  logLevel?: LogLevel;
+
+  /**
+   * Path of the JSON-line log file. Missing parent directories are created, and the file is
+   * opened by `configure` so an unusable path fails there. `STDOUT` (any letter case) writes
+   * to stdout only.
+   *
+   * @default 'snowflake.log'
+   */
+  logFilePath?: string;
+
+  /**
+   * Whether log lines also go to stdout when they are written to a file.
+   *
+   * @default true
+   */
+  additionalLogToConsole?: boolean | null;
+
+  /**
+   * Receives the level-filtered, formatted messages instead of the built-in file and console
+   * output. Setting it back to `undefined` restores the built-in output.
+   */
+  customLogger?: SnowflakeLogger;
+
   /**
    * Custom parser for JSON data in VARIANT, OBJECT, and ARRAY columns.
    *
@@ -111,10 +144,23 @@ export interface ConfigureOptions {
   customCredentialManager?: CustomCredentialManager;
 }
 
-type ResolvedConfig = Required<Omit<ConfigureOptions, 'customCredentialManager' | 'crlCacheDir'>> &
-  Pick<ConfigureOptions, 'crlCacheDir'>;
+const LOGGING_OPTIONS: (keyof ConfigureOptions)[] = [
+  'logLevel',
+  'logFilePath',
+  'additionalLogToConsole',
+  'customLogger',
+];
+
+type ResolvedConfig = Required<
+  Omit<ConfigureOptions, 'customCredentialManager' | 'crlCacheDir' | 'customLogger'>
+> &
+  Pick<ConfigureOptions, 'crlCacheDir' | 'customLogger'>;
 
 const buildDefaults = (): ResolvedConfig => ({
+  logLevel: 'INFO',
+  logFilePath: 'snowflake.log',
+  additionalLogToConsole: true,
+  customLogger: undefined,
   jsonColumnVariantParser: (
     rawColumnValue: string,
     // NOTE: We're intentionally not documenting the context argument in CustomParser to match old driver typing
@@ -161,7 +207,26 @@ export function updateGlobalConfig({ customCredentialManager, ...options }: Conf
   if (customCredentialManager != null) {
     setCustomCredentialManager(customCredentialManager);
   }
-  Object.assign(GlobalConfig, options);
+  const logLevel = parseLogLevel(options.logLevel);
+  Object.assign(GlobalConfig, options, logLevel && { logLevel });
+
+  if (LOGGING_OPTIONS.some((key) => key in options)) {
+    applyLoggingOptions();
+  }
+}
+
+function applyLoggingOptions() {
+  logRouter.syncLevel();
+  if (!GlobalConfig.customLogger && GlobalConfig.logLevel !== 'OFF') {
+    defaultLogger.openFile();
+  }
+  logger.info(
+    'Configuring logger with level: %s, filePath: %s, additionalLogToConsole: %s, customLogger: %s',
+    GlobalConfig.logLevel,
+    GlobalConfig.logFilePath,
+    GlobalConfig.additionalLogToConsole,
+    GlobalConfig.customLogger !== undefined,
+  );
 }
 
 // TODO:
@@ -191,4 +256,6 @@ function setCustomCredentialManager(manager: CustomCredentialManager) {
 export const resetGlobalConfig = () => {
   Object.assign(GlobalConfig, buildDefaults());
   coreSetCustomCredentialManager(null);
+  defaultLogger.close();
+  logRouter.syncLevel();
 };

@@ -125,6 +125,21 @@ export declare function formatSnowflakeDate(format: string, epochMillis: number,
 export declare function getFipsStatus(): FipsStatus
 
 /**
+ * Connects the bridge to the JS side. The package entry point calls it once at load.
+ *
+ * `classConstructors` holds the JS classes the bridge creates but napi cannot define:
+ * `SnowflakeDate` extends `Date`, and napi classes can't extend built-in JS classes, so the
+ * class lives in TypeScript and the bridge calls its constructor. The constructors are
+ * stored per JS env, because napi references don't work across envs.
+ *
+ * `logCallback` is how log records reach the JS logger. Every record goes through sf_core
+ * first, including records logged in JS, which JS sends in with `logEvent`. sf_core writes
+ * them to its own outputs, such as the troubleshooting file, then calls `logCallback`
+ * with each record allowed by the level set with `setLogLevel`.
+ */
+export declare function initBridge(classConstructors: { SnowflakeDate: new (epochMillis: number, nanos: number, scale: number, timezone: string | number, format: string) => unknown }, logCallback: (arg: LogEvent) => void): void
+
+/**
  * Session parameters that both the Node.js layer and this bridge read for a
  * connection.
  *
@@ -165,6 +180,13 @@ export interface KnownSessionParameters {
   timezone: string
 }
 
+export declare function logEvent(level: number, message: string): void
+
+export interface LogEvent {
+  level: number
+  message: string
+}
+
 export declare enum QueryBindingFormat {
   Json = 0,
   Csv = 1,
@@ -181,16 +203,9 @@ export interface QueryBindings {
 
 export type QueryStatus = 'RUNNING' | 'ABORTING' | 'SUCCESS' | 'FAILED_WITH_ERROR' | 'ABORTED' | 'QUEUED' | 'FAILED_WITH_INCIDENT' | 'DISCONNECTED' | 'RESUMING_WAREHOUSE' | 'QUEUED_REPARING_WAREHOUSE' | 'RESTARTED' | 'BLOCKED' | 'NO_DATA'
 
-/**
- * Gives the bridge the constructors to JS classes it needs to create.
- *
- * `SnowflakeDate` extends `Date`, and napi classes can't extend built-in JS classes,
- * so the class lives in TypeScript and the bridge calls its constructor.
- * The constructors are stored per JS env, because napi references don't work across envs.
- */
-export declare function registerClassConstructors(constructors: { SnowflakeDate: new (epochMillis: number, nanos: number, scale: number, timezone: string | number, format: string) => unknown }): void
-
 export declare function setCustomCredentialManager(manager: { read: (key: string) => Promise<string | null | undefined>, write: (key: string, token: string) => Promise<void>, remove: (key: string) => Promise<void> } | null): void
+
+export declare function setLogLevel(level: number): void
 
 export type StatementStatus = 'fetching' | 'complete'
 

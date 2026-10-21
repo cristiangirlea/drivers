@@ -39,5 +39,6 @@ export type {
   XMlParserConfigOption,
   ConfigureOptions,
 } from './global-config.js';
+export type { LogLevel, SnowflakeLogger } from './logging/index.js';
 export type { Pool, PoolOptions } from './create-pool.js';
 export type { FipsStatus } from './core/index.js';

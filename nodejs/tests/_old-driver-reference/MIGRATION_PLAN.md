@@ -355,9 +355,10 @@ called out explicitly.
   reachable from the public API. Confirm after beta and drop if so.
 - [`unit/global_config_test.ts`](./unit/global_config_test.ts) — migrate as soon as the new
   driver exposes a global-config surface.
-- [`unit/snowflake_config_test.js`](./unit/snowflake_config_test.js) — after beta, ensure there
-  is e2e coverage for every option of `snowflake.configure`. This file does not cover all
-  options, so use it as a checklist rather than a 1:1 migration source.
+- [`unit/snowflake_config_test.js`](./unit/snowflake_config_test.js) — `logLevel` cases moved to
+  `nodejs/tests/unit/logging/configure.test.ts`. After beta, ensure there is e2e coverage for
+  every remaining option of `snowflake.configure`. This file does not cover all options, so use
+  it as a checklist rather than a 1:1 migration source.
 
 ### Snowflake top-level API
 
@@ -449,8 +450,10 @@ called out explicitly.
 
 ### Logger / easy logging
 
-- [`unit/logger/node_test.js`](./unit/logger/node_test.js) — migrate as soon as the new driver
-  has a logger, to cover its configuration surface.
+- [`unit/logger/node_test.js`](./unit/logger/node_test.js) — file JSON format, `logLevel` (including
+  TRACE as DEBUG), and console/file sinks now live in
+  `nodejs/tests/unit/logging/configure.test.ts` and `logging.test.ts`. Remaining coverage here is
+  Winston-only (`includeTimestamp: false`, distinct TRACE lines) and is not ported.
 - [`unit/logger/easy_logging_starter_test.js`](./unit/logger/easy_logging_starter_test.js) —
   after beta, research what "easy logging" is, its public API, and decide what coverage it
   needs. Pairs with `integration/testEasyLoggingOnConnecting.js`.

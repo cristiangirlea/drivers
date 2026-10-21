@@ -30,9 +30,11 @@
 // - Class, enum, interface, or type alias: add a `type` line to `declare namespace snowflake`
 //   at the end of the file.
 import * as api from './api.js';
-import { coreRegisterClassConstructors } from './core/index.js';
+import { coreInitBridge, coreLogEvent, coreSetLogLevel } from './core/index.js';
+import { logRouter } from './logging/index.js';
 
-coreRegisterClassConstructors({ SnowflakeDate: api.SnowflakeDate });
+coreInitBridge({ SnowflakeDate: api.SnowflakeDate }, logRouter.handleCoreLogEvent);
+logRouter.setup({ logEvent: coreLogEvent, setLogLevel: coreSetLogLevel });
 
 // Values are exported with `export import`, because only this form gives both:
 // - Users can replace an export, for example stub `createConnection` in tests.
@@ -98,6 +100,8 @@ declare namespace snowflake {
   type CustomParser = api.CustomParser;
   type XMlParserConfigOption = api.XMlParserConfigOption;
   type ConfigureOptions = api.ConfigureOptions;
+  type LogLevel = api.LogLevel;
+  type SnowflakeLogger = api.SnowflakeLogger;
   type Pool<T> = api.Pool<T>;
   type PoolOptions = api.PoolOptions;
   type FipsStatus = api.FipsStatus;

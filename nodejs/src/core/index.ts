@@ -58,12 +58,14 @@ export type StatementStatus = CoreBinary.StatementStatus;
 // Names must start with `Core` or `core`, so they are not confused with the public names above.
 export const CoreConnection = core.Connection;
 export const CoreStatement = core.Statement;
-export const coreRegisterClassConstructors = core.registerClassConstructors;
+export const coreInitBridge = core.initBridge;
 export const CoreColumn = core.Column;
 export const coreFormatSnowflakeDate = core.formatSnowflakeDate;
 export const CoreSessionState = core.SessionState;
 export const CoreQueryBindingFormat = core.QueryBindingFormat;
 export const coreSetCustomCredentialManager = core.setCustomCredentialManager;
+export const coreLogEvent = core.logEvent;
+export const coreSetLogLevel = core.setLogLevel;
 
 export type CoreConnectionInstance = InstanceType<typeof CoreConnection>;
 export type CoreStatementInstance = InstanceType<typeof CoreStatement>;
@@ -72,3 +74,4 @@ export type CoreSessionStateInstance = InstanceType<typeof CoreSessionState>;
 export type CoreQueryBindings = CoreBinary.QueryBindings;
 export type CoreKnownSessionParameters = CoreBinary.KnownSessionParameters;
 export type ConnectionTokenInfo = CoreBinary.ConnectionTokenInfo;
+export type CoreLogEvent = CoreBinary.LogEvent;

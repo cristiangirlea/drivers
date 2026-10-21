@@ -2501,3 +2501,48 @@ behavior_differences:
     status_rationale: |
       Needs a core change: on 403 from a chunk URL, fetch the query result again for fresh
       chunk URLs and resume from the failed chunk. Tracked under SNOW-4334869.
+
+  132:
+    name: 'logLevel TRACE logs the same records as DEBUG, tagged DEBUG'
+    status: unknown
+    type: unknown
+    reviewed: false
+    is_breaking_change: false
+    impact: low
+    old_driver_behavior: |
+      TRACE is a fifth level above DEBUG. With logLevel 'TRACE' the driver also writes its
+      trace-level records, tagged "TRACE" in the JSON log line, and calls customLogger.trace()
+      for them. With logLevel 'DEBUG' those records are dropped.
+    new_driver_behavior: |
+      logLevel 'TRACE' is accepted and behaves exactly like 'DEBUG'. sf_core folds its own
+      TRACE events into DEBUG, so they are already logged at logLevel 'DEBUG'. Every such line
+      is tagged "DEBUG", and the driver calls customLogger.debug(), never customLogger.trace().
+
+  133:
+    name: 'configure keeps logging options that a later call does not set'
+    status: unknown
+    type: bugfix
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      Each configure call that sets a logging option resets the logging options it omits to
+      their defaults, e.g. configure({ logFilePath }) drops an earlier customLogger.
+    new_driver_behavior: |
+      Logging options keep their earlier values, like every other configure option.
+      configure({ customLogger: undefined }) restores the built-in output.
+
+  134:
+    name: 'An invalid logLevel throws an InvalidParameterError without an error code'
+    status: unknown
+    type: api_incompatibility
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      configure({ logLevel }) with an unknown level throws an Error with code 403001
+      (ERR_GLOBAL_CONFIGURE_INVALID_LOG_LEVEL) and the message "Invalid logLevel. The specified
+      value must be one of these five levels: error, warn, debug, info and trace."
+    new_driver_behavior: |
+      The same call throws an InvalidParameterError with no `code` and the message
+      "Invalid logLevel: <value>".
