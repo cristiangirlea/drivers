@@ -1,3 +1,6 @@
+# Node 22 is our minimum supported version for driver users (nodejs/package.json engines).
+# Auth tests run on 24 because it avoids the Node 20 issue with Vitest and the Node 22 issue with npm 10.
+# The risk of missing a Node 22 compatibility issue is minimal, because auth is implemented in Rust core (has almost no NodeJS wrapper-side code).
 FROM node:24-bookworm
 
 WORKDIR /mnt/host
