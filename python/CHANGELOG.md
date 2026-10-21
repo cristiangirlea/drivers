@@ -2,9 +2,26 @@
 
 ## Upcoming Release
 
+## 5.1.0 (October 21, 2026)
+
 New features:
 
-- Added support for Python 3.14t (free-threaded CPython). (snowflakedb/drivers#2759)
+- Added support for Python 3.14t (free-threaded CPython).
+
+Bug fixes:
+
+- Fixed statement-level TIMEZONE overrides so a registered TIMEZONE can be set on a statement and is sent on the query request.
+- Fixed stage uploads and downloads so a failed system certificate load is retried, instead of failing the storage client or skipping the operating-system trust store.
+- Changed TLS certificate checks for RUSTSEC-2026-0382 by updating bundled root certificates and distrusting compromised intermediate Certificate Authority (CA) certificates.
+
+Changes:
+
+- Changed login to omit `CLIENT_SESSION_KEEP_ALIVE` and `CLIENT_PREFETCH_THREADS` unless the caller sets them.
+- Changed login to send `CLIENT_SESSION_KEEP_ALIVE`, `CLIENT_PREFETCH_THREADS`, `QUERY_TAG`, and a heartbeat frequency clamped to 900–3600 seconds as session parameters, and to send a set `validate_default_parameters` value, true or false, as `CLIENT_VALIDATE_DEFAULT_PARAMETERS`, leaving that parameter off the login request when it is unset.
+- Changed login to send `TIMEZONE`, `AUTOCOMMIT`, `CLIENT_TIMESTAMP_TYPE_MAPPING`, `CLIENT_METADATA_REQUEST_USE_CONNECTION_CTX`, `SERVICE_NAME`, `GCS_USE_DOWNSCOPED_CREDENTIAL`, and `CLIENT_OUT_OF_BAND_TELEMETRY_ENABLED` as session parameters when they are set.
+- Removed `disable_console_login` and `oauth_disable_console_login`. Passing either connection parameter warns and has no effect, and external browser login always requests the SSO URL from Snowflake.
+- Removed `OCSP_MODE` from the login client environment and from connection diagnostics. The driver does not perform OCSP; certificate revocation continues to be reported as `CERT_REVOCATION_CHECK_MODE`.
+- Changed GCS PUT to omit the `Content-Encoding` header.
 
 ## 5.0.0 (October 15, 2026)
 
