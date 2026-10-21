@@ -1,4 +1,6 @@
 use super::base_handler::{BaseDriverHandler, BehaviorDifferenceLocation, TestMethod};
+use crate::behavior_differences_utils::compile_bd_regex;
+use crate::behavior_differences_utils::load_behavior_difference_files;
 use crate::behavior_differences_utils::parse_behavior_differences_descriptions as parse_behavior_differences_descriptions_util;
 use anyhow::{Context, Result};
 use regex::Regex;
@@ -10,14 +12,14 @@ use std::sync::LazyLock;
 static PYTHON_TEST_METHOD_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"def\s+(test_\w+)\s*\(").unwrap());
 static SKIP_REFERENCE_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"@pytest\.mark\.skip_reference\(.*?(BD#\d+)"#).unwrap());
+    LazyLock::new(|| compile_bd_regex(r#"@pytest\.mark\.skip_reference\(.*?({bd})"#));
 static SKIP_UNIVERSAL_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"@pytest\.mark\.skip_universal\(.*?(BD#\d+)"#).unwrap());
+    LazyLock::new(|| compile_bd_regex(r#"@pytest\.mark\.skip_universal\(.*?({bd})"#));
 static SELF_CLASS_METHOD_CALL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"self\.(_\w+)\s*\(").unwrap());
 static FUNCTION_CALL_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\w+)\s*\(").unwrap());
 static DRIVER_ONLY_BD_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?:NEW_DRIVER_ONLY|OLD_DRIVER_ONLY)\s*\(\s*"(BD#\d+)"\s*\)"#).unwrap()
+    compile_bd_regex(r#"(?:NEW_DRIVER_ONLY|OLD_DRIVER_ONLY)\s*\(\s*"({bd})"\s*\)"#)
 });
 
 pub struct PythonHandler {
@@ -50,19 +52,27 @@ impl BaseDriverHandler for PythonHandler {
     }
 
     fn parse_behavior_differences_descriptions(&self) -> Result<HashMap<String, String>> {
+        let mut descriptions = HashMap::new();
         let behavior_difference_file_path = self.get_behavior_differences_file_path();
-        if !behavior_difference_file_path.exists() {
-            return Ok(HashMap::new());
+        if behavior_difference_file_path.exists() {
+            let content =
+                fs::read_to_string(&behavior_difference_file_path).with_context(|| {
+                    format!(
+                        "Failed to read Behavior Difference file: {}",
+                        behavior_difference_file_path.display()
+                    )
+                })?;
+            descriptions.extend(parse_behavior_differences_descriptions_util(&content)?);
         }
 
-        let content = fs::read_to_string(&behavior_difference_file_path).with_context(|| {
-            format!(
-                "Failed to read Behavior Difference file: {}",
-                behavior_difference_file_path.display()
-            )
-        })?;
-
-        parse_behavior_differences_descriptions_util(&content)
+        let files_dir = self
+            .workspace_root
+            .join("python")
+            .join("behavior_differences");
+        for (id, description) in load_behavior_difference_files(&files_dir)? {
+            descriptions.entry(id).or_insert(description);
+        }
+        Ok(descriptions)
     }
 
     fn extract_test_methods(&self, content: &str) -> Vec<TestMethod> {
@@ -462,5 +472,29 @@ impl PythonHandler {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn driver_only_marker_accepts_number_and_slug() {
+        let handler = PythonHandler::new(PathBuf::new());
+        assert_eq!(
+            handler
+                .extract_breaking_change_from_line(r#"if OLD_DRIVER_ONLY("BD#42"):"#)
+                .as_deref(),
+            Some("BD#42")
+        );
+        assert_eq!(
+            handler
+                .extract_breaking_change_from_line(
+                    r#"if NEW_DRIVER_ONLY("BD#private-key-password-renamed"):"#,
+                )
+                .as_deref(),
+            Some("BD#private-key-password-renamed")
+        );
     }
 }

@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Pre-commit validator for driver BehaviorDifferences.yaml files.
+"""Pre-commit validator for driver behavior-difference registries.
 
-File shape:
+Monolith file shape (every driver):
   behavior_differences:
     <positive_int_id>:
       <fields...>
+
+Python also accepts one file per entry under python/behavior_differences/<area>/<slug>.yaml.
+The file body is the entry itself (no behavior_differences wrapper). The slug is the id.
+A new Python integer key in the monolith is rejected. Deleting an existing Python integer
+key is allowed only when exactly one of those files sets legacy_id to that key, and the
+key is no longer in the monolith. That legacy_id stays valid after the deletion is in the
+baseline. The baseline is HEAD locally and BD_BASE_SHA in CI (the pull-request base),
+because ``pre-commit run --all-files`` checks out a tree that already contains the change.
+JDBC, ODBC, and Node.js stay integer-only; removals there are still forbidden.
 
 Per-entry schema:
 
@@ -24,6 +33,10 @@ Per-entry schema:
     description (str) — extra context, migration notes, spec links.
     old_driver_behavior (str) — behavior of the legacy/reference driver.
     new_driver_behavior (str) — behavior of the universal driver.
+    legacy_id (int) — Python files only. The monolith integer this file replaces.
+      Required when that integer is removed versus the baseline, and rejected while
+      the integer is still a key in the monolith. It stays set after the baseline
+      itself no longer has the key, so BD#<integer> keeps resolving.
 
   ODBC-only rule:
     When reviewed is true, status_rationale must be a non-empty string.
@@ -38,17 +51,22 @@ Per-entry schema:
       only the last of any duplicate key, which would otherwise hide the collision.
     - The raw ID-line count must equal the number of unique parsed entries; a
       mismatch means a duplicate key silently dropped an entry on load.
-    - Only the fields listed above are allowed (no unknown keys).
-    - Entries must not be removed vs. HEAD (additions and edits only).
+    - Only the fields listed above are allowed (no unknown keys). legacy_id is
+      allowed on Python per-file entries only.
+    - Entries must not be removed versus the baseline, except a Python integer key
+      replaced by a file whose legacy_id is that key. The file keeps legacy_id
+      after that deletion is committed.
 """
 
 from __future__ import annotations
 
 import enum
+import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -109,6 +127,33 @@ KNOWN_FIELDS = {
     "is_breaking_change",
 }
 
+FILE_KNOWN_FIELDS = KNOWN_FIELDS | {"legacy_id"}
+
+# Allowed parent directories of per-file entries.
+BD_AREAS = frozenset({
+    "auth",
+    "config",
+    "connection",
+    "errors",
+    "file-transfer",
+    "metadata",
+    "put-get",
+    "query",
+    "session",
+    "types",
+})
+
+# Kebab-case. The first segment is at least two characters: ``ab`` and ``ab-c``
+# match, ``a-b`` does not. A leading letter excludes an all-digit id.
+_SLUG_RE = re.compile(r"^[a-z][a-z0-9]+(?:-[a-z0-9]+)*$")
+_MAX_SLUG_LEN = 64
+
+# Monolith path -> directory of per-file entries. Drivers absent from this map
+# stay on the integer-key monolith only.
+GATED_FILE_DIRS: dict[str, str] = {
+    "python/BehaviorDifferences.yaml": "python/behavior_differences",
+}
+
 ODBC_BD_RELPATH = "odbc_tests/BehaviorDifferences.yaml"
 
 DEFAULT_IMPACT = BDImpact.HIGH
@@ -125,11 +170,39 @@ BD_FILES: list[tuple[str, Path]] = [
 ]
 
 
-def _committed_ids(git_relpath: str) -> set[int]:
-    """Return the set of BD IDs from the last committed version of the file."""
+def _rev_exists(rev: str) -> bool:
+    try:
+        subprocess.check_output(
+            ["git", "rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}"],
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except (subprocess.CalledProcessError, OSError):
+        return False
+
+
+def _baseline_rev() -> str:
+    """Revision the monolith diff compares against.
+
+    Unset ``BD_BASE_SHA`` means HEAD, which is the parent during a local commit.
+    CI sets ``BD_BASE_SHA`` to the pull-request base so a committed addition or
+    removal is still visible. An unusable value falls back to HEAD.
+    """
+    baseline = os.environ.get("BD_BASE_SHA", "").strip()
+    if baseline and _rev_exists(baseline):
+        return baseline
+    return "HEAD"
+
+
+def _committed_ids(git_relpath: str, rev: str) -> set[int] | None:
+    """Return BD IDs from ``rev`` of the monolith, or None when ``rev`` cannot be read.
+
+    None skips the diff rules (new integer keys and removals). An empty set means
+    the revision was read and contains no entries.
+    """
     try:
         raw = subprocess.check_output(
-            ["git", "show", f"HEAD:{git_relpath}"],
+            ["git", "show", f"{rev}:{git_relpath}"],
             stderr=subprocess.DEVNULL,
         )
         data = yaml.safe_load(raw)
@@ -139,8 +212,8 @@ def _committed_ids(git_relpath: str) -> set[int]:
         if not isinstance(entries, dict):
             return set()
         return {int(k) for k in entries if isinstance(entries[k], dict)}
-    except (subprocess.CalledProcessError, ValueError, TypeError):
-        return set()
+    except (subprocess.CalledProcessError, ValueError, TypeError, yaml.YAMLError):
+        return None
 
 
 def _raw_id_lines(text: str) -> list[int]:
@@ -164,7 +237,7 @@ def _raw_structure_errors(label: str, text: str, parsed_ids: set[int]) -> list[s
 
     1. Duplicate IDs — the same ``N:`` key appearing more than once. PyYAML keeps
        only the last occurrence, silently dropping the earlier entry, so the
-       parsed-mapping duplicate check in ``validate_file`` never sees it.
+       parsed-mapping duplicate check in ``check_monolith_text`` never sees it.
     2. Parse loss — the raw ID-line count not matching the number of unique
        entries the parser produced. A mismatch means a duplicate key silently
        merged two blocks on load (belt-and-suspenders alongside guard 1).
@@ -173,8 +246,7 @@ def _raw_structure_errors(label: str, text: str, parsed_ids: set[int]) -> list[s
     raw_ids = _raw_id_lines(text)
 
     if not raw_ids:
-        # No ID lines found; the structural checks in validate_file will report
-        # the missing/empty mapping. Nothing more to add here.
+        # No ID lines found; check_monolith_text reports the missing mapping.
         return errors
 
     # Guard 1: duplicate IDs (order-preserving, report each dup once).
@@ -198,25 +270,122 @@ def _raw_structure_errors(label: str, text: str, parsed_ids: set[int]) -> list[s
     return errors
 
 
-def validate_file(git_relpath: str, yaml_path: Path) -> list[str]:
+def _field_errors(
+    prefix: str,
+    entry: dict,
+    *,
+    known_fields: set[str],
+    require_status_rationale: bool,
+) -> list[str]:
+    errors: list[str] = []
+
+    unknown_fields = set(entry.keys()) - known_fields
+    if unknown_fields:
+        errors.append(f"{prefix}: unknown field(s): {', '.join(sorted(unknown_fields))}")
+
+    name = entry.get("name")
+    if not name or not isinstance(name, str) or not name.strip():
+        errors.append(f"{prefix}: 'name' is required and must be non-empty")
+
+    status = entry.get("status")
+    if status is None:
+        allowed = ", ".join(s.value for s in BDStatus)
+        errors.append(f"{prefix}: 'status' is required (allowed: {allowed})")
+    else:
+        try:
+            BDStatus(status)
+        except ValueError:
+            allowed = ", ".join(s.value for s in BDStatus)
+            errors.append(f"{prefix}: invalid status '{status}' (allowed: {allowed})")
+
+    bd_type = entry.get("type")
+    if bd_type is None:
+        allowed = ", ".join(s.value for s in BDType)
+        errors.append(f"{prefix}: 'type' is required (allowed: {allowed})")
+    else:
+        try:
+            BDType(bd_type)
+        except ValueError:
+            allowed = ", ".join(s.value for s in BDType)
+            errors.append(f"{prefix}: invalid type '{bd_type}' (allowed: {allowed})")
+
+    reviewed = entry.get("reviewed")
+    if reviewed is not None and not isinstance(reviewed, bool):
+        errors.append(f"{prefix}: 'reviewed' must be a boolean (true/false)")
+
+    if require_status_rationale and reviewed is True:
+        rationale = entry.get("status_rationale")
+        if not rationale or not isinstance(rationale, str) or not rationale.strip():
+            errors.append(
+                f"{prefix}: non-empty 'status_rationale' is required when reviewed is true"
+            )
+
+    impact = entry.get("impact")
+    if impact is None:
+        allowed = ", ".join(s.value for s in BDImpact)
+        errors.append(
+            f"{prefix}: 'impact' is required"
+            f" (allowed: {allowed}; default: {DEFAULT_IMPACT.value})"
+        )
+    else:
+        try:
+            BDImpact(impact)
+        except ValueError:
+            allowed = ", ".join(s.value for s in BDImpact)
+            errors.append(
+                f"{prefix}: invalid impact '{impact}'"
+                f" (allowed: {allowed}; narrative impact text belongs in 'description')"
+            )
+
+    is_breaking = entry.get("is_breaking_change")
+    if is_breaking is None:
+        errors.append(
+            f"{prefix}: 'is_breaking_change' is required"
+            f" (boolean; default: {str(DEFAULT_IS_BREAKING_CHANGE).lower()})"
+        )
+    elif not isinstance(is_breaking, bool):
+        errors.append(f"{prefix}: 'is_breaking_change' must be a boolean (true/false)")
+
+    return errors
+
+
+@dataclass
+class MonolithCheck:
+    errors: list[str]
+    ids: set[int]
+    # Integer keys present in committed_ids and absent from the text.
+    # Empty when committed_ids is None (the baseline revision was not available).
+    removed: set[int] = field(default_factory=set)
+
+
+def check_monolith_text(
+    git_relpath: str,
+    text: str,
+    committed_ids: set[int] | None,
+    *,
+    gated_file_dir: str | None = None,
+) -> MonolithCheck:
+    """Validate one monolith document.
+
+    When ``gated_file_dir`` is set, a positive integer key that is not in
+    ``committed_ids`` is an error, and removals are reported on ``removed``
+    instead of as errors. ``check_migration`` decides whether each removal has
+    a matching ``legacy_id``. When ``committed_ids`` is None, those diff rules
+    are skipped.
+    """
     errors: list[str] = []
     label = git_relpath
 
-    if not yaml_path.is_file():
-        errors.append(f"{label}: file not found at {yaml_path}")
-        return errors
-
-    text = yaml_path.read_text(encoding="utf-8")
     data = yaml.safe_load(text)
 
     if not isinstance(data, dict) or "behavior_differences" not in data:
         errors.append(f"{label}: missing top-level 'behavior_differences' key")
-        return errors
+        return MonolithCheck(errors, set())
 
     entries = data["behavior_differences"]
     if not isinstance(entries, dict):
         errors.append(f"{label}: 'behavior_differences' must be a mapping of ID → entry")
-        return errors
+        return MonolithCheck(errors, set())
 
     seen_ids: set[int] = set()
 
@@ -240,88 +409,196 @@ def validate_file(git_relpath: str, yaml_path: Path) -> list[str]:
             errors.append(f"{prefix}: entry must be a mapping, got {type(entry).__name__}")
             continue
 
-        unknown_fields = set(entry.keys()) - KNOWN_FIELDS
-        if unknown_fields:
-            errors.append(f"{prefix}: unknown field(s): {', '.join(sorted(unknown_fields))}")
-
-        name = entry.get("name")
-        if not name or not isinstance(name, str) or not name.strip():
-            errors.append(f"{prefix}: 'name' is required and must be non-empty")
-
-        status = entry.get("status")
-        if status is None:
-            allowed = ", ".join(s.value for s in BDStatus)
-            errors.append(f"{prefix}: 'status' is required (allowed: {allowed})")
-        else:
-            try:
-                BDStatus(status)
-            except ValueError:
-                allowed = ", ".join(s.value for s in BDStatus)
-                errors.append(f"{prefix}: invalid status '{status}' (allowed: {allowed})")
-
-        bd_type = entry.get("type")
-        if bd_type is None:
-            allowed = ", ".join(s.value for s in BDType)
-            errors.append(f"{prefix}: 'type' is required (allowed: {allowed})")
-        else:
-            try:
-                BDType(bd_type)
-            except ValueError:
-                allowed = ", ".join(s.value for s in BDType)
-                errors.append(f"{prefix}: invalid type '{bd_type}' (allowed: {allowed})")
-
-        reviewed = entry.get("reviewed")
-        if reviewed is not None and not isinstance(reviewed, bool):
-            errors.append(f"{prefix}: 'reviewed' must be a boolean (true/false)")
-
-        if git_relpath == ODBC_BD_RELPATH and reviewed is True:
-            rationale = entry.get("status_rationale")
-            if not rationale or not isinstance(rationale, str) or not rationale.strip():
-                errors.append(
-                    f"{prefix}: non-empty 'status_rationale' is required when reviewed is true"
-                )
-
-        impact = entry.get("impact")
-        if impact is None:
-            allowed = ", ".join(s.value for s in BDImpact)
-            errors.append(
-                f"{prefix}: 'impact' is required"
-                f" (allowed: {allowed}; default: {DEFAULT_IMPACT.value})"
+        errors.extend(
+            _field_errors(
+                prefix,
+                entry,
+                known_fields=KNOWN_FIELDS,
+                require_status_rationale=git_relpath == ODBC_BD_RELPATH,
             )
-        else:
-            try:
-                BDImpact(impact)
-            except ValueError:
-                allowed = ", ".join(s.value for s in BDImpact)
-                errors.append(
-                    f"{prefix}: invalid impact '{impact}'"
-                    f" (allowed: {allowed}; narrative impact text belongs in 'description')"
-                )
-
-        is_breaking = entry.get("is_breaking_change")
-        if is_breaking is None:
-            errors.append(
-                f"{prefix}: 'is_breaking_change' is required"
-                f" (boolean; default: {str(DEFAULT_IS_BREAKING_CHANGE).lower()})"
-            )
-        elif not isinstance(is_breaking, bool):
-            errors.append(f"{prefix}: 'is_breaking_change' must be a boolean (true/false)")
+        )
 
     errors.extend(_raw_structure_errors(label, text, seen_ids))
 
-    old_ids = _committed_ids(git_relpath)
-    removed = old_ids - seen_ids
-    if removed:
-        for bd_id in sorted(removed):
-            errors.append(f"{label} BD-{bd_id}: entry was removed — removals are not allowed")
+    removed: set[int] = set()
+    if committed_ids is not None:
+        removed = committed_ids - seen_ids
+        if gated_file_dir is None:
+            for bd_id in sorted(removed):
+                errors.append(f"{label} BD-{bd_id}: entry was removed — removals are not allowed")
+        else:
+            added = {bd_id for bd_id in seen_ids if bd_id > 0} - committed_ids
+            for bd_id in sorted(added):
+                errors.append(
+                    f"{label} BD-{bd_id}: new entries must be a file at "
+                    f"{gated_file_dir}/<area>/<slug>.yaml"
+                )
 
+    return MonolithCheck(errors, seen_ids, removed)
+
+
+@dataclass
+class BdFilesCheck:
+    errors: list[str]
+    # legacy_id -> repo-relative file path. Duplicates are errors and only the
+    # first path is kept.
+    legacy_ids: dict[int, str] = field(default_factory=dict)
+
+
+def _legacy_id_value(prefix: str, raw: object) -> tuple[int | None, str | None]:
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        return None, f"{prefix}: 'legacy_id' must be a positive integer"
+    return raw, None
+
+
+def check_bd_files(dir_label: str, files: list[tuple[str, str]]) -> BdFilesCheck:
+    """Validate per-file entries.
+
+    ``files`` is ``(path relative to dir_label, YAML text)`` using forward
+    slashes, each expected to be ``<area>/<slug>.yaml``.
+    """
+    errors: list[str] = []
+    legacy_ids: dict[int, str] = {}
+    seen_slugs: dict[str, str] = {}
+    areas = ", ".join(sorted(BD_AREAS))
+
+    for rel, text in files:
+        path_label = f"{dir_label}/{rel}"
+        parts = PurePosixPath(rel).parts
+        if len(parts) != 2 or PurePosixPath(rel).suffix != ".yaml":
+            errors.append(f"{path_label}: expected <area>/<slug>.yaml")
+            continue
+
+        area, filename = parts
+        slug = filename[: -len(".yaml")]
+        if area not in BD_AREAS:
+            errors.append(f"{path_label}: area '{area}' is not allowed (allowed: {areas})")
+        if len(slug) > _MAX_SLUG_LEN or _SLUG_RE.fullmatch(slug) is None:
+            errors.append(
+                f"{path_label}: filename '{slug}' must be a kebab-case slug "
+                f"matching {_SLUG_RE.pattern} and at most {_MAX_SLUG_LEN} characters"
+            )
+        elif slug in seen_slugs:
+            errors.append(f"{path_label}: duplicate slug '{slug}' (also {seen_slugs[slug]})")
+        else:
+            seen_slugs[slug] = path_label
+
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            errors.append(f"{path_label}: failed to parse YAML: {exc}")
+            continue
+
+        if not isinstance(data, dict):
+            errors.append(f"{path_label}: entry must be a mapping, got {type(data).__name__}")
+            continue
+        if "behavior_differences" in data:
+            errors.append(
+                f"{path_label}: file is one entry; do not wrap it in 'behavior_differences'"
+            )
+
+        errors.extend(
+            _field_errors(
+                path_label,
+                data,
+                known_fields=FILE_KNOWN_FIELDS,
+                require_status_rationale=False,
+            )
+        )
+
+        if "legacy_id" not in data:
+            continue
+        legacy_id, legacy_error = _legacy_id_value(path_label, data["legacy_id"])
+        if legacy_error is not None or legacy_id is None:
+            if legacy_error is not None:
+                errors.append(legacy_error)
+            continue
+        if legacy_id in legacy_ids:
+            errors.append(
+                f"{path_label}: duplicate legacy_id {legacy_id} (also {legacy_ids[legacy_id]})"
+            )
+            continue
+        legacy_ids[legacy_id] = path_label
+
+    return BdFilesCheck(errors, legacy_ids)
+
+
+def check_migration(
+    monolith_label: str,
+    current_ids: set[int],
+    removed: set[int],
+    legacy_ids: dict[int, str],
+) -> list[str]:
+    """Pair monolith deletions with per-file ``legacy_id`` values.
+
+    A key in ``removed`` needs a file whose ``legacy_id`` is that integer.
+    ``legacy_id`` is rejected while the integer is still in ``current_ids``.
+    After the baseline no longer contains the integer, ``removed`` is empty and
+    the file keeps ``legacy_id``.
+    """
+    errors: list[str] = []
+    for bd_id in sorted(removed - set(legacy_ids)):
+        errors.append(
+            f"{monolith_label} BD-{bd_id}: entry was removed — removals are not allowed "
+            f"unless a file sets legacy_id: {bd_id}"
+        )
+    for bd_id, path_label in sorted(legacy_ids.items()):
+        if bd_id in current_ids:
+            errors.append(
+                f"{path_label}: legacy_id {bd_id} is still a key in {monolith_label}"
+            )
     return errors
+
+
+def _read_bd_dir(dir_path: Path) -> list[tuple[str, str]]:
+    if not dir_path.is_dir():
+        return []
+    files: list[tuple[str, str]] = []
+    for path in sorted(dir_path.rglob("*")):
+        if path.is_file():
+            rel = path.relative_to(dir_path).as_posix()
+            files.append((rel, path.read_text(encoding="utf-8")))
+    return files
 
 
 def validate() -> list[str]:
     errors: list[str] = []
+    baseline = _baseline_rev()
     for git_relpath, yaml_path in BD_FILES:
-        errors.extend(validate_file(git_relpath, yaml_path))
+        if not yaml_path.is_file():
+            errors.append(f"{git_relpath}: file not found at {yaml_path}")
+            continue
+
+        text = yaml_path.read_text(encoding="utf-8")
+        committed_ids = _committed_ids(git_relpath, baseline)
+        gated_file_dir = GATED_FILE_DIRS.get(git_relpath)
+        monolith = check_monolith_text(
+            git_relpath,
+            text,
+            committed_ids,
+            gated_file_dir=gated_file_dir,
+        )
+        errors.extend(monolith.errors)
+
+        if gated_file_dir is None:
+            continue
+
+        dir_path = _REPO_ROOT / gated_file_dir
+        if dir_path.exists() and not dir_path.is_dir():
+            errors.append(f"{gated_file_dir}: expected a directory of <area>/<slug>.yaml files")
+            continue
+
+        file_check = check_bd_files(gated_file_dir, _read_bd_dir(dir_path))
+        errors.extend(file_check.errors)
+        errors.extend(
+            check_migration(
+                git_relpath,
+                monolith.ids,
+                monolith.removed,
+                file_check.legacy_ids,
+            )
+        )
+
     return errors
 
 
@@ -334,6 +611,9 @@ def main() -> int:
         return 1
     for git_relpath, _ in BD_FILES:
         print(f"{git_relpath}: OK")
+        gated_file_dir = GATED_FILE_DIRS.get(git_relpath)
+        if gated_file_dir is not None:
+            print(f"{gated_file_dir}: OK")
     return 0
 
 

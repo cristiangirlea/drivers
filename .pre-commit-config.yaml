@@ -154,11 +154,19 @@ repos:
         language: system
     -   id: behavior-differences-validator
         name: Behavioral Differences format check
-        description: Validate BehaviorDifferences.yaml schema (status, type, impact, is_breaking_change)
+        description: Validate behavior-difference schema (monolith YAML and Python per-file entries)
         entry: python3 scripts/validate_behavior_differences.py
         pass_filenames: false
         additional_dependencies: ['pyyaml']
-        files: ^(odbc_tests|python|jdbc|nodejs)/BehaviorDifferences\.yaml$
+        files: ^(odbc_tests|python|jdbc|nodejs)/BehaviorDifferences\.yaml$|^python/behavior_differences/.+\.yaml$|^scripts/validate_behavior_differences\.py$
+        language: python
+    -   id: behavior-differences-validator-test
+        name: Behavioral Differences validator tests
+        description: Unit tests for scripts/validate_behavior_differences.py
+        entry: python3 -m unittest scripts/test_validate_behavior_differences.py
+        pass_filenames: false
+        additional_dependencies: ['pyyaml']
+        files: ^scripts/(validate_behavior_differences\.py|test_validate_behavior_differences\.py)$
         language: python
     -   id: mirror-config-consistency
         name: Mirror config generation consistency

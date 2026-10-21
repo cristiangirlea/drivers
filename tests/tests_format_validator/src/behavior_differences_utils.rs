@@ -1,5 +1,15 @@
+use anyhow::{Context, Result};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+
+pub const BD_ID_PATTERN: &str = r"BD#(?:\d+|[a-z][a-z0-9]+(?:-[a-z0-9]+)*)";
+
+pub fn compile_bd_regex(pattern: &str) -> Regex {
+    Regex::new(&pattern.replace("{bd}", BD_ID_PATTERN)).unwrap()
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 struct BehaviorDifference {
@@ -28,22 +38,8 @@ pub fn parse_behavior_differences_descriptions(
     if let Ok(yaml_data) = serde_yaml::from_str::<BehaviorDifferences>(content) {
         for (key, bd) in yaml_data.behavior_differences {
             let breaking_change_id = format!("BD#{key}");
-
-            // Create description with type information for the title
-            let mut full_description = bd.name.clone();
-
-            // Add type information if available
-            if let Some(bd_type) = bd.r#type {
-                full_description = format!("[{bd_type}] {full_description}");
-            } else {
-                full_description = format!("[Behavior Difference] {full_description}");
-            }
-
-            // Add additional description if available (this will be shown in details section)
-            if let Some(additional_desc) = bd.description {
-                full_description.push_str(&format!("\n{additional_desc}"));
-            }
-
+            let full_description =
+                format_bd_description(&bd.name, bd.r#type.as_deref(), bd.description.as_deref());
             descriptions.insert(breaking_change_id, full_description);
         }
         return Ok(descriptions);
@@ -104,9 +100,88 @@ pub fn parse_behavior_differences_descriptions(
     Ok(descriptions)
 }
 
+fn format_bd_description(name: &str, bd_type: Option<&str>, description: Option<&str>) -> String {
+    let mut full_description = match bd_type {
+        Some(bd_type) => format!("[{bd_type}] {name}"),
+        None => format!("[Behavior Difference] {name}"),
+    };
+    if let Some(additional_desc) = description {
+        full_description.push_str(&format!("\n{additional_desc}"));
+    }
+    full_description
+}
+
+#[derive(Debug, Deserialize)]
+struct BehaviorDifferenceFile {
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default, rename = "type")]
+    bd_type: Option<String>,
+    #[serde(default)]
+    legacy_id: Option<i64>,
+}
+
+pub fn load_behavior_difference_files(dir: &Path) -> Result<HashMap<String, String>> {
+    let mut descriptions = HashMap::new();
+    if !dir.is_dir() {
+        return Ok(descriptions);
+    }
+
+    for area_entry in
+        fs::read_dir(dir).with_context(|| format!("Failed to read {}", dir.display()))?
+    {
+        let area_entry = area_entry?;
+        if !area_entry.file_type()?.is_dir() {
+            continue;
+        }
+        for file_entry in fs::read_dir(area_entry.path())? {
+            let file_entry = file_entry?;
+            let path = file_entry.path();
+            if !file_entry.file_type()?.is_file() {
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+                continue;
+            }
+            let Some(slug) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+            let content = fs::read_to_string(&path)
+                .with_context(|| format!("Failed to read {}", path.display()))?;
+            let parsed: BehaviorDifferenceFile = serde_yaml::from_str(&content)
+                .with_context(|| format!("Failed to parse {}", path.display()))?;
+            let description = format_bd_description(
+                &parsed.name,
+                parsed.bd_type.as_deref(),
+                parsed.description.as_deref(),
+            );
+            match parsed.legacy_id.filter(|id| *id > 0) {
+                Some(legacy_id) => {
+                    descriptions
+                        .entry(format!("BD#{slug}"))
+                        .or_insert_with(|| description.clone());
+                    descriptions
+                        .entry(format!("BD#{legacy_id}"))
+                        .or_insert(description);
+                }
+                None => {
+                    descriptions
+                        .entry(format!("BD#{slug}"))
+                        .or_insert(description);
+                }
+            }
+        }
+    }
+
+    Ok(descriptions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use regex::Regex;
+    use std::fs;
 
     #[test]
     fn test_parse_simple_behavior_differences() {
@@ -245,5 +320,47 @@ More details after empty line
             result.get("BD#3"),
             Some(&"[Breaking Change] Breaking change in API".to_string())
         );
+    }
+
+    #[test]
+    fn bd_id_pattern_matches_number_and_slug() {
+        let re = Regex::new(BD_ID_PATTERN).unwrap();
+        assert_eq!(re.find("BD#42").unwrap().as_str(), "BD#42");
+        assert_eq!(
+            re.find("OLD_DRIVER_ONLY(\"BD#private-key-password-renamed\")")
+                .unwrap()
+                .as_str(),
+            "BD#private-key-password-renamed"
+        );
+        assert!(re.find("BD#").is_none());
+        assert_eq!(re.find("BD#ab-c").unwrap().as_str(), "BD#ab-c");
+        assert!(re.find("BD#a-b").is_none());
+    }
+
+    #[test]
+    fn load_behavior_difference_file_slug_and_legacy_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let area = dir.path().join("auth");
+        fs::create_dir(&area).unwrap();
+        fs::write(
+            area.join("private-key-password-renamed.yaml"),
+            r#"name: "Private key password parameter name changed"
+type: api_incompatibility
+legacy_id: 5
+description: mapped name
+"#,
+        )
+        .unwrap();
+
+        let result = load_behavior_difference_files(dir.path()).unwrap();
+        let expected =
+            "[api_incompatibility] Private key password parameter name changed\nmapped name";
+        assert_eq!(
+            result
+                .get("BD#private-key-password-renamed")
+                .map(String::as_str),
+            Some(expected)
+        );
+        assert_eq!(result.get("BD#5").map(String::as_str), Some(expected));
     }
 }

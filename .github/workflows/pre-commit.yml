@@ -115,6 +115,20 @@ jobs:
             --output python/src/snowflake/connector/_internal/protobuf_gen
 
 
+      - name: Fetch behavior-difference baseline
+        # pre-commit --all-files checks out the pull-request tree, so a diff
+        # against HEAD cannot see integer keys added or removed on the branch.
+        # The validator reads BD_BASE_SHA as that baseline.
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ref="refs/heads/${{ github.base_ref }}"
+          else
+            ref="${{ github.event.merge_group.base_ref }}"
+          fi
+          git fetch --no-tags --depth=1 origin "${ref}:refs/bd-base"
+          echo "BD_BASE_SHA=$(git rev-parse refs/bd-base)" >> "$GITHUB_ENV"
+
       - name: Run pre-commit on all files
         # Skip regenerate-and-git-add hooks in CI: they `git add` on an
         # ephemeral runner. The Verify ConnectionConfig and

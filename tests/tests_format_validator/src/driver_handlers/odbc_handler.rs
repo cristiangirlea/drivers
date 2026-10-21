@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use super::base_handler::{BaseDriverHandler, BehaviorDifferenceLocation, TestMethod};
+use crate::behavior_differences_utils::compile_bd_regex;
 use crate::behavior_differences_utils::parse_behavior_differences_descriptions as parse_behavior_differences_descriptions_util;
 
-static BD_REFERENCE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(BD#\d+)").unwrap());
+static BD_REFERENCE_REGEX: LazyLock<Regex> = LazyLock::new(|| compile_bd_regex(r"({bd})"));
 static QUOTED_STRING_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""([^"]+)""#).unwrap());
 static FUNCTION_CALL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"([a-zA-Z_][a-zA-Z0-9_]*)\s*\(").unwrap());
@@ -17,14 +18,14 @@ static NEW_DRIVER_ONLY_REGEX: LazyLock<Regex> =
 static OLD_DRIVER_ONLY_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"OLD_DRIVER_ONLY\s*\(\s*"([^"]+)"\s*\)"#).unwrap());
 static SKIP_OLD_DRIVER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"SKIP_OLD_DRIVER\s*\(\s*"(BD#\d+)""#).unwrap());
+    LazyLock::new(|| compile_bd_regex(r#"SKIP_OLD_DRIVER\s*\(\s*"({bd})""#));
 static SKIP_NEW_DRIVER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"SKIP_NEW_DRIVER\s*\(\s*"(BD#\d+)""#).unwrap());
+    LazyLock::new(|| compile_bd_regex(r#"SKIP_NEW_DRIVER\s*\(\s*"({bd})""#));
 static SKIP_OLD_DRIVER_MULTILINE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"SKIP_OLD_DRIVER\s*\(\s*$"#).unwrap());
 static SKIP_NEW_DRIVER_MULTILINE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"SKIP_NEW_DRIVER\s*\(\s*$"#).unwrap());
-static QUOTED_BD_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""(BD#\d+)""#).unwrap());
+static QUOTED_BD_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| compile_bd_regex(r#""({bd})""#));
 
 pub struct OdbcHandler {
     workspace_root: PathBuf,
@@ -373,5 +374,31 @@ impl BaseDriverHandler for OdbcHandler {
         }
 
         Ok(breaking_changes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bd_markers_accept_number_and_slug() {
+        let handler = OdbcHandler::new(PathBuf::new());
+        assert_eq!(
+            handler.extract_breaking_change_id(r#"OLD_DRIVER_ONLY("BD#78")"#),
+            "BD#78"
+        );
+        assert_eq!(
+            handler.extract_breaking_change_id(
+                r#"OLD_DRIVER_ONLY("BD#private-key-password-renamed")"#,
+            ),
+            "BD#private-key-password-renamed"
+        );
+        assert!(SKIP_OLD_DRIVER_REGEX.is_match(r#"SKIP_OLD_DRIVER("BD#78""#));
+        assert!(
+            SKIP_OLD_DRIVER_REGEX.is_match(r#"SKIP_OLD_DRIVER("BD#private-key-password-renamed""#)
+        );
+        assert!(QUOTED_BD_ID_REGEX.is_match(r#""BD#78""#));
+        assert!(QUOTED_BD_ID_REGEX.is_match(r#""BD#private-key-password-renamed""#));
     }
 }

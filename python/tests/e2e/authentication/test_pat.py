@@ -3,7 +3,7 @@ import uuid
 
 import pytest
 
-from ...compatibility import is_new_driver, is_old_driver
+from ...compatibility import NEW_DRIVER_ONLY, OLD_DRIVER_ONLY
 from ...config import get_test_parameters
 from .auth_helpers import verify_login_error, verify_simple_query_execution
 
@@ -95,9 +95,9 @@ class TestPATAuthentication:
 
         # Then is_valid returns true for the new driver and false for the old driver
         with connection:
-            if is_new_driver():
+            if NEW_DRIVER_ONLY("BD#pat-external-session-is-valid"):
                 assert connection.is_valid() is True
-            if is_old_driver():
+            elif OLD_DRIVER_ONLY("BD#pat-external-session-is-valid"):
                 assert connection.is_valid() is False
 
 

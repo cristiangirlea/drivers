@@ -1,4 +1,5 @@
 use super::base_handler::{BaseDriverHandler, BehaviorDifferenceLocation, TestMethod};
+use crate::behavior_differences_utils::compile_bd_regex;
 use crate::behavior_differences_utils::parse_behavior_differences_descriptions as parse_behavior_differences_descriptions_util;
 use anyhow::{Context, Result};
 use regex::Regex;
@@ -18,13 +19,13 @@ static NEW_DRIVER_ONLY_REGEX: LazyLock<Regex> =
 static OLD_DRIVER_ONLY_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"//\s*OLD_DRIVER_ONLY\s*\(\s*"([^"]+)"\s*\)"#).unwrap());
 static SKIP_OLD_DRIVER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"//\s*SKIP_OLD_DRIVER\s*\(\s*"(BD#\d+)""#).unwrap());
+    LazyLock::new(|| compile_bd_regex(r#"//\s*SKIP_OLD_DRIVER\s*\(\s*"({bd})""#));
 static SKIP_NEW_DRIVER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"//\s*SKIP_NEW_DRIVER\s*\(\s*"(BD#\d+)""#).unwrap());
+    LazyLock::new(|| compile_bd_regex(r#"//\s*SKIP_NEW_DRIVER\s*\(\s*"({bd})""#));
 static ASSUME_NEW_DRIVER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"assumeTrue\s*\(\s*isNewDriver\s*\(\s*\).*?(BD#\d+)"#).unwrap());
+    LazyLock::new(|| compile_bd_regex(r#"assumeTrue\s*\(\s*isNewDriver\s*\(\s*\).*?({bd})"#));
 static ASSUME_OLD_DRIVER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"assumeTrue\s*\(\s*isOldDriver\s*\(\s*\).*?(BD#\d+)"#).unwrap());
+    LazyLock::new(|| compile_bd_regex(r#"assumeTrue\s*\(\s*isOldDriver\s*\(\s*\).*?({bd})"#));
 
 pub struct JdbcHandler {
     workspace_root: PathBuf,
@@ -334,5 +335,20 @@ impl JdbcHandler {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bd_markers_accept_number_and_slug() {
+        assert!(SKIP_OLD_DRIVER_REGEX.is_match(r#"// SKIP_OLD_DRIVER("BD#24""#));
+        assert!(SKIP_OLD_DRIVER_REGEX
+            .is_match(r#"// SKIP_OLD_DRIVER("BD#private-key-password-renamed""#));
+        assert!(ASSUME_NEW_DRIVER_REGEX.is_match(r#"assumeTrue(isNewDriver(), "BD#24 differs");"#,));
+        assert!(ASSUME_NEW_DRIVER_REGEX
+            .is_match(r#"assumeTrue(isNewDriver(), "BD#private-key-password-renamed differs");"#,));
     }
 }

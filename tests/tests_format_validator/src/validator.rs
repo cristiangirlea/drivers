@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 use walkdir::WalkDir;
 
 use crate::behavior_differences_processor::BehaviorDifferencesProcessor;
+use crate::behavior_differences_utils::BD_ID_PATTERN;
 use crate::feature_parser::Feature;
 use crate::step_finder::StepFinder;
 use crate::test_discovery::{Language, TestDiscovery, TestLevel};
@@ -34,7 +35,7 @@ static JS_TEST_FN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     )
     .unwrap()
 });
-static BD_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"BD#\d+").unwrap());
+static BD_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(BD_ID_PATTERN).unwrap());
 static RUST_FN_DECL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?:async\s+)?fn\s+(\w+)\s*\(").unwrap());
 static ODBC_TEST_CASE_DECL_REGEX: LazyLock<Regex> =

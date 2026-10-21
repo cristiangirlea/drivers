@@ -40,8 +40,7 @@ static RUST_TEST_ATTR_REGEX: LazyLock<Regex> =
 /// from being read as a call modifier that swallows the title. `it.todo('…')` is a
 /// sanctioned disposition for a scenario broken in both drivers, so it must resolve like a
 /// plain `it('…')`.
-const JS_TEST_MODIFIERS: &str =
-    r"(?:\.(?:skip|only|todo|concurrent|fails|sequential)|\.(?:each|skipIf|runIf)(?:\s*<[^>]*>)?\s*\([\s\S]*?\))*";
+const JS_TEST_MODIFIERS: &str = r"(?:\.(?:skip|only|todo|concurrent|fails|sequential)|\.(?:each|skipIf|runIf)(?:\s*<[^>]*>)?\s*\([\s\S]*?\))*";
 
 /// Matches an `it`/`test` declaration and captures its title. The title is the call's first
 /// argument, so only whitespace precedes it (`\(\s*['"]…`): a greedy gap there lets one `it`
@@ -294,7 +293,8 @@ impl MethodBoundaryFinder {
                         // multiple [InlineData]/[MemberData] attributes between the test
                         // attribute and the method signature)
                         for (j, method_line) in lines.iter().enumerate().skip(i + 1).take(20) {
-                            if let Some(captures) = dotnet_method_regex.captures(method_line.trim()) {
+                            if let Some(captures) = dotnet_method_regex.captures(method_line.trim())
+                            {
                                 let method_name = captures[1].to_string();
                                 methods.push((method_name, j + 1)); // +1 for 1-indexed line numbers
                                 break;
@@ -1751,7 +1751,11 @@ public class TlsVersionTest
             )
             .expect("Should find matching methods");
 
-        assert_eq!(methods.len(), 1, "Async-suffixed virtual method should match scenario");
+        assert_eq!(
+            methods.len(),
+            1,
+            "Async-suffixed virtual method should match scenario"
+        );
         assert_eq!(
             methods[0].0,
             "ShouldNegotiateTlsWhenTheServerOffersAVersionInsideTheWindowAsync"

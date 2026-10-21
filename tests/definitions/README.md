@@ -114,7 +114,7 @@ When no `type` is specified in the YAML:
 
 ### Test Implementation
 
-Behavior Differences are referenced in test code using the format `BD#{number}`:
+Behavior Differences are referenced in test code using `BD#<id>`. `<id>` is a number for JDBC, ODBC, Node.js, and existing Python entries. A new Python entry uses a kebab-case slug, for example `BD#private-key-password-renamed`.
 
 ```python
 # Python example
@@ -142,10 +142,15 @@ NEW_DRIVER_ONLY("BD#1") {
 
 ### Adding New Behavior Differences
 
-1. **Update YAML**: Add new entry to the driver's `BehaviorDifferences.yaml` file
-2. **Implement Tests**: Add `BD#` references in test methods using `OLD_DRIVER_ONLY()` and `NEW_DRIVER_ONLY()` macros
-3. **Run Validator**: Ensure the BD is detected and appears in coverage reports
-4. **Verify Report**: Check that the BD appears correctly in the HTML coverage report
+**Python** — add a file. Do not add a new integer key to `python/BehaviorDifferences.yaml`.
+
+1. **Add a file**: `python/behavior_differences/<area>/<slug>.yaml`. `<area>` is a name in `BD_AREAS` in `scripts/validate_behavior_differences.py`. `<slug>` is a kebab-case id such as `private-key-password-renamed`. The file body is the entry itself (`name`, `status`, `type`, `impact`, `is_breaking_change`, and the optional fields). A new entry has `reviewed: false` and no `legacy_id`.
+2. **Implement tests**: reference `BD#<slug>`, for example `OLD_DRIVER_ONLY("BD#private-key-password-renamed")`.
+3. **Run the check**: `python3 scripts/validate_behavior_differences.py`.
+
+To move an existing Python entry, put the same body in a file with `legacy_id: <old integer>`, delete that key from `python/BehaviorDifferences.yaml`, and leave test markers on `BD#<old integer>` until a later edit. Both tokens resolve while `legacy_id` is set.
+
+**JDBC, ODBC, and Node.js** — still a numbered entry in that driver's `BehaviorDifferences.yaml`, referenced as `BD#<number>`.
 
 ## Gherkin Best Practices
 
