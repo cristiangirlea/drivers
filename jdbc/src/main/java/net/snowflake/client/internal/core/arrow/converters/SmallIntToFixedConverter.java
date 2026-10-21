@@ -6,13 +6,12 @@ import net.snowflake.client.api.exception.ErrorCode;
 import net.snowflake.client.api.resultset.SnowflakeType;
 import net.snowflake.client.internal.api.implementation.exception.SFSQLException;
 import net.snowflake.client.internal.util.SnowflakeUtil;
-import org.apache.arrow.vector.SmallIntVector;
 import org.apache.arrow.vector.ValueVector;
 
 public class SmallIntToFixedConverter extends AbstractArrowVectorConverter {
-  protected final SmallIntVector smallIntVector;
+  protected final ArrowBackedColumn smallColumn;
   protected int sfScale;
-  protected ByteBuffer byteBuf = ByteBuffer.allocate(SmallIntVector.TYPE_WIDTH);
+  protected ByteBuffer byteBuf = ByteBuffer.allocate(Short.BYTES);
 
   public SmallIntToFixedConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context) {
@@ -25,7 +24,7 @@ public class SmallIntToFixedConverter extends AbstractArrowVectorConverter {
         fieldVector,
         columnIndex,
         context);
-    this.smallIntVector = (SmallIntVector) fieldVector;
+    this.smallColumn = ArrowBackedColumn.wrap(fieldVector);
   }
 
   @Override
@@ -38,7 +37,7 @@ public class SmallIntToFixedConverter extends AbstractArrowVectorConverter {
   }
 
   protected short getShort(int index) {
-    return smallIntVector.getDataBuffer().getShort(index * SmallIntVector.TYPE_WIDTH);
+    return smallColumn.getShort(index);
   }
 
   @Override
@@ -54,7 +53,7 @@ public class SmallIntToFixedConverter extends AbstractArrowVectorConverter {
 
   @Override
   public short toShort(int index) {
-    if (smallIntVector.isNull(index)) {
+    if (isNull(index)) {
       return 0;
     }
     return getShort(index);
@@ -82,7 +81,7 @@ public class SmallIntToFixedConverter extends AbstractArrowVectorConverter {
 
   @Override
   public BigDecimal toBigDecimal(int index) {
-    if (smallIntVector.isNull(index)) {
+    if (isNull(index)) {
       return null;
     }
     return BigDecimal.valueOf(getShort(index), sfScale);
@@ -90,7 +89,7 @@ public class SmallIntToFixedConverter extends AbstractArrowVectorConverter {
 
   @Override
   public Object toObject(int index) {
-    if (smallIntVector.isNull(index)) {
+    if (isNull(index)) {
       return null;
     }
     if (!shouldTreatDecimalAsInt()) {

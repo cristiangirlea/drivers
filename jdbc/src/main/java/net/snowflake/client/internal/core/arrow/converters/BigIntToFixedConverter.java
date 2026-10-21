@@ -6,13 +6,12 @@ import net.snowflake.client.api.exception.ErrorCode;
 import net.snowflake.client.api.resultset.SnowflakeType;
 import net.snowflake.client.internal.api.implementation.exception.SFSQLException;
 import net.snowflake.client.internal.util.SnowflakeUtil;
-import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.ValueVector;
 
 public class BigIntToFixedConverter extends AbstractArrowVectorConverter {
-  protected final BigIntVector bigIntVector;
+  protected final ArrowBackedColumn bigColumn;
   protected int sfScale;
-  protected ByteBuffer byteBuf = ByteBuffer.allocate(BigIntVector.TYPE_WIDTH);
+  protected ByteBuffer byteBuf = ByteBuffer.allocate(Long.BYTES);
 
   public BigIntToFixedConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context) {
@@ -25,7 +24,7 @@ public class BigIntToFixedConverter extends AbstractArrowVectorConverter {
         fieldVector,
         columnIndex,
         context);
-    this.bigIntVector = (BigIntVector) fieldVector;
+    this.bigColumn = ArrowBackedColumn.wrap(fieldVector);
   }
 
   @Override
@@ -83,12 +82,12 @@ public class BigIntToFixedConverter extends AbstractArrowVectorConverter {
   }
 
   protected long getLong(int index) {
-    return bigIntVector.getDataBuffer().getLong(index * BigIntVector.TYPE_WIDTH);
+    return bigColumn.getLong(index);
   }
 
   @Override
   public long toLong(int index) {
-    if (bigIntVector.isNull(index)) {
+    if (isNull(index)) {
       return 0;
     }
     return getLong(index);
@@ -106,7 +105,7 @@ public class BigIntToFixedConverter extends AbstractArrowVectorConverter {
 
   @Override
   public BigDecimal toBigDecimal(int index) {
-    if (bigIntVector.isNull(index)) {
+    if (isNull(index)) {
       return null;
     }
     return BigDecimal.valueOf(getLong(index), sfScale);
@@ -114,7 +113,7 @@ public class BigIntToFixedConverter extends AbstractArrowVectorConverter {
 
   @Override
   public Object toObject(int index) {
-    if (bigIntVector.isNull(index)) {
+    if (isNull(index)) {
       return null;
     }
     if (!shouldTreatDecimalAsInt()) {

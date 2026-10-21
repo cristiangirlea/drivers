@@ -6,13 +6,12 @@ import net.snowflake.client.api.exception.ErrorCode;
 import net.snowflake.client.api.resultset.SnowflakeType;
 import net.snowflake.client.internal.api.implementation.exception.SFSQLException;
 import net.snowflake.client.internal.util.SnowflakeUtil;
-import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.ValueVector;
 
 public class TinyIntToFixedConverter extends AbstractArrowVectorConverter {
-  protected final TinyIntVector tinyIntVector;
+  protected final ArrowBackedColumn tinyColumn;
   protected int sfScale;
-  protected ByteBuffer byteBuf = ByteBuffer.allocate(TinyIntVector.TYPE_WIDTH);
+  protected ByteBuffer byteBuf = ByteBuffer.allocate(Byte.BYTES);
 
   public TinyIntToFixedConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context) {
@@ -25,7 +24,7 @@ public class TinyIntToFixedConverter extends AbstractArrowVectorConverter {
         fieldVector,
         columnIndex,
         context);
-    this.tinyIntVector = (TinyIntVector) fieldVector;
+    this.tinyColumn = ArrowBackedColumn.wrap(fieldVector);
   }
 
   @Override
@@ -46,7 +45,7 @@ public class TinyIntToFixedConverter extends AbstractArrowVectorConverter {
   }
 
   protected byte getByte(int index) {
-    return tinyIntVector.getDataBuffer().getByte(index * TinyIntVector.TYPE_WIDTH);
+    return tinyColumn.getByte(index);
   }
 
   @Override

@@ -6,13 +6,12 @@ import net.snowflake.client.api.exception.ErrorCode;
 import net.snowflake.client.api.resultset.SnowflakeType;
 import net.snowflake.client.internal.api.implementation.exception.SFSQLException;
 import net.snowflake.client.internal.util.SnowflakeUtil;
-import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.ValueVector;
 
 public class IntToFixedConverter extends AbstractArrowVectorConverter {
-  protected final IntVector intVector;
+  protected final ArrowBackedColumn intColumn;
   protected int sfScale;
-  protected ByteBuffer byteBuf = ByteBuffer.allocate(IntVector.TYPE_WIDTH);
+  protected ByteBuffer byteBuf = ByteBuffer.allocate(Integer.BYTES);
 
   public IntToFixedConverter(
       ValueVector fieldVector, int columnIndex, DataConversionContext context) {
@@ -25,7 +24,7 @@ public class IntToFixedConverter extends AbstractArrowVectorConverter {
         fieldVector,
         columnIndex,
         context);
-    this.intVector = (IntVector) fieldVector;
+    this.intColumn = ArrowBackedColumn.wrap(fieldVector);
   }
 
   @Override
@@ -60,12 +59,12 @@ public class IntToFixedConverter extends AbstractArrowVectorConverter {
   }
 
   protected int getInt(int index) {
-    return intVector.getDataBuffer().getInt(index * IntVector.TYPE_WIDTH);
+    return intColumn.getInt(index);
   }
 
   @Override
   public int toInt(int index) {
-    if (intVector.isNull(index)) {
+    if (isNull(index)) {
       return 0;
     }
     return getInt(index);
@@ -88,7 +87,7 @@ public class IntToFixedConverter extends AbstractArrowVectorConverter {
 
   @Override
   public BigDecimal toBigDecimal(int index) {
-    if (intVector.isNull(index)) {
+    if (isNull(index)) {
       return null;
     }
     return BigDecimal.valueOf((long) getInt(index), sfScale);
