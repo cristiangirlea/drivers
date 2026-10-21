@@ -435,8 +435,11 @@ called out explicitly.
 
 - [`unit/file_transfer_agent/`](./unit/file_transfer_agent/) — after beta, verify `sf_core`
   covers everything tested here. PUT/GET logic lives in `sf_core` going forward.
-- [`unit/large_result_set/`](./unit/large_result_set/) — appears redundant with other
-  result-handling coverage. After beta, confirm and drop.
+- [`unit/large_result_set/testLargeResultSet.js`](./unit/large_result_set/testLargeResultSet.js) —
+  partially covered by `tests/e2e/query/large-result-set-errors.test.ts` (LargeResultSetError
+  for an error status and for a 200 response with an XML body, NetworkError for a reset
+  connection). The XML case is skipped for the new driver until SNOW-4334410. Not covered yet: a
+  503 or a hang that exhausts retries, and recovery on the last retry.
 
 ### Disk cache
 

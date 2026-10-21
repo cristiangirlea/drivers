@@ -51,6 +51,10 @@ export class WiremockServer {
     };
   }
 
+  get url(): string {
+    return this.#url();
+  }
+
   async stub(mapping: StubMapping | StubMapping[]): Promise<void> {
     if (Array.isArray(mapping)) {
       for (const item of mapping) {

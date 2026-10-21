@@ -1,10 +1,11 @@
 import type { RowStatement as OldRowStatement } from 'snowflake-sdk-old';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import newSnowflakeSDK, { type Connection as NewSnowflakeConnection } from 'snowflake-sdk';
 import oldSnowflakeSDK from 'snowflake-sdk-old';
 import { resetGlobalConfig as resetGlobalConfigInNewDriver } from 'snowflake-sdk/dist/global-config.js';
-import { expect } from 'vitest';
+import { expect, onTestFinished } from 'vitest';
 import type {
   Connection,
   ConnectionOptions,
@@ -71,6 +72,20 @@ export function resetGlobalConfig(): void {
   } else {
     resetGlobalConfigInNewDriver();
   }
+}
+
+// 3.x retries a failed result chunk download 10 times with random sleeps of 1-16s. Connection
+// options cannot change either value, so this reaches the CJS ConnectionConfig and sets the sleep
+// cap for the current test; the retries still happen. The new driver never reads this object.
+export function patchOldDriverChunkRetrySleepCap(seconds: number): void {
+  const { prototype } = createRequire(import.meta.url)(
+    'snowflake-sdk-old/dist/lib/connection/connection_config.js',
+  ) as { prototype: { getRetryLargeResultSetMaxSleepTime: () => number } };
+  const previous = prototype.getRetryLargeResultSetMaxSleepTime;
+  prototype.getRetryLargeResultSetMaxSleepTime = () => seconds;
+  onTestFinished(() => {
+    prototype.getRetryLargeResultSetMaxSleepTime = previous;
+  });
 }
 
 /**

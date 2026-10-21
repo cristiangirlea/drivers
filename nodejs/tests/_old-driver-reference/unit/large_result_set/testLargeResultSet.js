@@ -31,6 +31,9 @@ describe('LargeResultSetService', () => {
     largeResultSetService = new LargeResultSetService(httpConnectionOptions, httpClientInstance);
   });
 
+  // nodejs/tests/e2e/query/large-result-set-errors.test.ts covers the error names and codes for a
+  // 404 chunk response and a reset connection, but not a 503 that exhausts retries or a download
+  // that hangs until it times out.
   describe('when all retries fail', () => {
     [
       { testName: 'should retry on 503', url: '/503', expectedErrorName: 'LargeResultSetError' },
@@ -79,16 +82,5 @@ describe('LargeResultSetService', () => {
     });
   });
 
-  it('should fail on xml content', (done) => {
-    largeResultSetService.getObject({
-      url: baseUrl + '/xml',
-      callback: (err, body) => {
-        if (err && err.name === 'LargeResultSetError') {
-          done();
-        } else {
-          done(`Error expected but received body ${body}`);
-        }
-      },
-    });
-  });
+  // "should fail on xml content" is covered by nodejs/tests/e2e/query/large-result-set-errors.test.ts.
 });

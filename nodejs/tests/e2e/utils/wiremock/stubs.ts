@@ -25,6 +25,7 @@ export interface ResponseDefinition {
   status?: number;
   headers?: Record<string, string>;
   jsonBody?: unknown;
+  body?: string;
   proxyBaseUrl?: string;
   transformers?: string[];
   fixedDelayMilliseconds?: number;
@@ -61,6 +62,34 @@ export function jsonResponse(status: number, body: unknown): ResponseDefinition 
     headers: { 'Content-Type': 'application/json' },
     jsonBody: body,
   };
+}
+
+export function resultWithOneRemoteChunk(queryId: string, chunkUrl: string): ResponseDefinition {
+  return jsonResponse(200, {
+    success: true,
+    data: {
+      queryId,
+      rowtype: [
+        {
+          name: 'C1',
+          type: 'text',
+          nullable: true,
+          length: 16777216,
+          byteLength: 16777216,
+          precision: null,
+          scale: null,
+        },
+      ],
+      rowset: [],
+      total: 1,
+      returned: 1,
+      queryResultFormat: 'json',
+      statementTypeId: 4096,
+      chunkHeaders: {},
+      qrmk: 'bW9jaw==',
+      chunks: [{ url: chunkUrl, rowCount: 1, uncompressedSize: 8, compressedSize: 8 }],
+    },
+  });
 }
 
 export function loginSuccess(dataOverrides: Record<string, unknown> = {}): StubMapping {

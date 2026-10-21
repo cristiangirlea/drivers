@@ -1,6 +1,8 @@
 use crate::rows::RowDecodeError;
+use arrow::error::ArrowError;
 use napi::bindgen_prelude::*;
 use sf_core::apis::database_driver_v1::{ApiError, ErrorKind};
+use sf_core::chunks::ChunkError;
 use sf_core::http::retry::HttpError;
 use sf_core::rest::snowflake::RestError;
 use std::future::Future;
@@ -64,6 +66,15 @@ impl ClientError {
     fn of(error: &ApiError) -> Self {
         if is_snowflake_unreachable(error) {
             return Self::of_network_unreachable(error.root_cause());
+        }
+        match chunk_download_failure(error) {
+            Some(ChunkDownloadFailure::Unreachable) => {
+                return Self::of_cloud_storage_unreachable(error.root_cause());
+            }
+            Some(ChunkDownloadFailure::ErrorStatus(status)) => {
+                return Self::of_cloud_storage_error_status(status);
+            }
+            None => {}
         }
         if matches!(error.kind(), ErrorKind::Cancelled) {
             return Self::of_cancelled();
@@ -186,6 +197,28 @@ impl ClientError {
         }
     }
 
+    fn of_cloud_storage_unreachable(cause: Option<String>) -> Self {
+        Self {
+            name: Some("NetworkError"),
+            message: "Network error. Could not reach S3/Blob.".to_string(),
+            code: Some(ErrorCode::Driver(402001)),
+            sql_state: None,
+            cause,
+            is_fatal: false,
+        }
+    }
+
+    fn of_cloud_storage_error_status(status: String) -> Self {
+        Self {
+            name: Some("LargeResultSetError"),
+            message: "Request to S3/Blob failed.".to_string(),
+            code: Some(ErrorCode::Driver(402002)),
+            sql_state: None,
+            cause: Some(format!("HTTP status {status}")),
+            is_fatal: false,
+        }
+    }
+
     fn of_cancelled() -> Self {
         Self {
             name: Some("OperationFailedError"),
@@ -271,6 +304,31 @@ fn new_js_error<'env>(env: &'env Env, message: String) -> napi::Result<Object<'e
 
 fn construct_js_error_fail(err: napi::Error) -> napi::Error {
     napi::Error::from_reason(format!("failed to construct JS error: {err}"))
+}
+
+enum ChunkDownloadFailure {
+    Unreachable,
+    ErrorStatus(String),
+}
+
+fn chunk_download_failure(error: &ApiError) -> Option<ChunkDownloadFailure> {
+    let ApiError::ChunkFetch { source, .. } = error else {
+        return None;
+    };
+    let download_error = match source {
+        ChunkError::ChunkRead {
+            source: ArrowError::ExternalError(inner),
+            ..
+        } => inner.downcast_ref::<ChunkError>()?,
+        direct => direct,
+    };
+    match download_error {
+        ChunkError::Communication { .. } => Some(ChunkDownloadFailure::Unreachable),
+        ChunkError::UnsuccessfulHttpStatusCode { status, .. } => {
+            Some(ChunkDownloadFailure::ErrorStatus(status.to_string()))
+        }
+        _ => None,
+    }
 }
 
 fn error_name(error: &ApiError) -> Option<&'static str> {

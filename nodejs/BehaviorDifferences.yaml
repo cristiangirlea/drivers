@@ -1543,10 +1543,13 @@ behavior_differences:
       createNetworkError passes the axios or Node error as `cause` and no message, so
       createError copies `cause.message` into `message` (for a refused port,
       `connect ECONNREFUSED 127.0.0.1:<port>`). The catalog text 'Network error. Could not
-      reach Snowflake.' is only the fallback for a cause without a message.
+      reach Snowflake.' is only the fallback for a cause without a message. A result chunk
+      download that cannot reach cloud storage fails the same way with NetworkError 402001
+      (for a reset connection, `read ECONNRESET`).
     new_driver_behavior: |
       NetworkError 401001 always has the catalog message 'Network error. Could not reach
-      Snowflake.'. The root cause from the Rust HTTP stack is on `cause`. Name and code match
+      Snowflake.', and NetworkError 402001 always has 'Network error. Could not reach
+      S3/Blob.'. The root cause from the Rust HTTP stack is on `cause`. Name and code match
       the old driver.
     description: |
       The transport runs in Rust, not in Node, so the old message text (Node's ECONNREFUSED
@@ -2459,3 +2462,42 @@ behavior_differences:
       passed to deserializeConnection() turns heartbeats on. When the original connection also
       has keep-alive on, both connections send heartbeats for the same session. That is harmless
       and doubles the heartbeat requests.
+
+  130:
+    name: 'LargeResultSetError has the HTTP status on cause instead of the raw response object'
+    status: allowed
+    type: api_incompatibility
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      When cloud storage answers a result chunk download with an error status after retries,
+      the query fails with LargeResultSetError 402002 "Request to S3/Blob failed." and the
+      axios response object on `response` (status, headers, body). There is no `cause`.
+    new_driver_behavior: |
+      The query fails with LargeResultSetError 402002 "Request to S3/Blob failed." without a
+      `response` property. The HTTP status, for example "HTTP status 404 Not Found", is on
+      `cause`. Name, code and message match the old driver.
+    description: |
+      Chunks are downloaded by the Rust core, which does not hand the HTTP response to Node.
+      The status is the part of that response that tells the application what went wrong.
+
+  131:
+    name: 'An expired result chunk URL fails the query instead of being refreshed'
+    status: todo
+    type: api_incompatibility
+    reviewed: false
+    is_breaking_change: true
+    impact: medium
+    old_driver_behavior: |
+      When cloud storage answers a result chunk download with 403, typically because the
+      presigned chunk URL expired while the application read the result slowly, the driver
+      retries the download and then fetches the query result again for fresh chunk URLs and
+      continues reading. It does this up to 3 times per result stream
+      (resultStreamInterrupts).
+    new_driver_behavior: |
+      The query fails at once with LargeResultSetError 402002 "Request to S3/Blob failed.",
+      with "HTTP status 403 Forbidden" on `cause`. Chunk URLs are not refreshed.
+    status_rationale: |
+      Needs a core change: on 403 from a chunk URL, fetch the query result again for fresh
+      chunk URLs and resume from the failed chunk. Tracked under SNOW-4334869.
