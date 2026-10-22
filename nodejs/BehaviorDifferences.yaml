@@ -1118,7 +1118,8 @@ behavior_differences:
       not return child resultIds, so hasNext is absent (ordinary RowStatement).
     new_driver_behavior: |
       The same request is classified as ExecuteQueryResult::Multi. With no child query IDs,
-      the bridge throws GenericFailure "multi-statement result contained no child query IDs".
+      the request fails with a plain Error "multi-statement result contained no child query IDs"
+      whose code is undefined.
       The statement object in the error still has hasNext/NextResult (BD#50).
     description: |
       Closing this difference requires a core change. Core classifies the parent execute

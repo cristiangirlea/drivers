@@ -89,6 +89,33 @@ impl ClientError {
         }
     }
 
+    fn of_bridge(error: &BridgeError) -> Self {
+        match error {
+            BridgeError::Core(error) => Self::of(error),
+            BridgeError::UnusableConnection(operation, connection) => {
+                Self::of_unusable_connection(*operation, *connection)
+            }
+            BridgeError::InvalidQueryId(query_id) => Self::of_invalid_id("queryId", query_id),
+            BridgeError::InvalidRequestId(request_id) => {
+                Self::of_invalid_id("requestId", request_id)
+            }
+            BridgeError::QueryStatusFailed {
+                query_id,
+                error_code,
+                error_message,
+            } => Self::of_query_status_error(query_id, *error_code, error_message),
+            BridgeError::AlreadyConnected => Self::of_already_connected(),
+            BridgeError::AlreadyConnecting => Self::of_already_connecting(),
+            BridgeError::ConnectionTerminated => Self::of_connection_terminated(),
+            BridgeError::QueryIdNoData(query_id) => Self::of_query_id_no_data(query_id),
+            BridgeError::QueryIdNotSuccess { query_id, status } => {
+                Self::of_query_id_not_success(query_id, status)
+            }
+            BridgeError::RowDecode(error) => Self::unnamed(error.to_string()),
+            BridgeError::Message(message) => Self::unnamed(message.clone()),
+        }
+    }
+
     /// The old driver's SQL-state table covers only the 405xxx and 407xxx families.
     fn of_unusable_connection(
         operation: ConnectionOperation,
@@ -254,10 +281,10 @@ impl ClientError {
         }
     }
 
-    fn of_row_decode(error: &RowDecodeError) -> Self {
+    fn unnamed(message: String) -> Self {
         Self {
             name: None,
-            message: error.to_string(),
+            message,
             code: None,
             sql_state: None,
             cause: None,
@@ -378,52 +405,9 @@ impl ToJsError for ApiError {
 
 impl ToJsError for BridgeError {
     fn to_js_error(&self, env: Env) -> napi::Error {
-        match self {
-            BridgeError::Core(error) => error.to_js_error(env),
-            BridgeError::UnusableConnection(operation, connection) => {
-                ClientError::of_unusable_connection(*operation, *connection)
-                    .build(env)
-                    .unwrap_or_else(construct_js_error_fail)
-            }
-            BridgeError::InvalidQueryId(query_id) => {
-                ClientError::of_invalid_id("queryId", query_id)
-                    .build(env)
-                    .unwrap_or_else(construct_js_error_fail)
-            }
-            BridgeError::InvalidRequestId(request_id) => {
-                ClientError::of_invalid_id("requestId", request_id)
-                    .build(env)
-                    .unwrap_or_else(construct_js_error_fail)
-            }
-            BridgeError::QueryStatusFailed {
-                query_id,
-                error_code,
-                error_message,
-            } => ClientError::of_query_status_error(query_id, *error_code, error_message)
-                .build(env)
-                .unwrap_or_else(construct_js_error_fail),
-            BridgeError::AlreadyConnected => ClientError::of_already_connected()
-                .build(env)
-                .unwrap_or_else(construct_js_error_fail),
-            BridgeError::AlreadyConnecting => ClientError::of_already_connecting()
-                .build(env)
-                .unwrap_or_else(construct_js_error_fail),
-            BridgeError::ConnectionTerminated => ClientError::of_connection_terminated()
-                .build(env)
-                .unwrap_or_else(construct_js_error_fail),
-            BridgeError::QueryIdNoData(query_id) => ClientError::of_query_id_no_data(query_id)
-                .build(env)
-                .unwrap_or_else(construct_js_error_fail),
-            BridgeError::QueryIdNotSuccess { query_id, status } => {
-                ClientError::of_query_id_not_success(query_id, status)
-                    .build(env)
-                    .unwrap_or_else(construct_js_error_fail)
-            }
-            BridgeError::RowDecode(error) => ClientError::of_row_decode(error)
-                .build(env)
-                .unwrap_or_else(construct_js_error_fail),
-            BridgeError::Message(message) => napi::Error::from_reason(message.clone()),
-        }
+        ClientError::of_bridge(self)
+            .build(env)
+            .unwrap_or_else(construct_js_error_fail)
     }
 }
 
@@ -482,6 +466,23 @@ mod tests {
 
         assert_eq!(error.name, None);
         assert_eq!(error.message, "Invalid argument: row mode");
+        assert_eq!(code_of(&error), None);
+        assert_eq!(error.sql_state, None);
+        assert_eq!(error.cause, None);
+        assert!(!error.is_fatal);
+    }
+
+    #[test]
+    fn a_bridge_message_carries_no_name_or_code() {
+        let error = ClientError::of_bridge(&BridgeError::Message(
+            "nested multi-statement result is not supported".to_string(),
+        ));
+
+        assert_eq!(error.name, None);
+        assert_eq!(
+            error.message,
+            "nested multi-statement result is not supported"
+        );
         assert_eq!(code_of(&error), None);
         assert_eq!(error.sql_state, None);
         assert_eq!(error.cause, None);

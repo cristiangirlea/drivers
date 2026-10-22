@@ -205,7 +205,9 @@ describe('describeOnly', () => {
     if (isRunningNewDriverWithBD('BD#56')) {
       await expect(execution).rejects.toMatchObject({
         error: {
+          name: 'Error',
           message: 'multi-statement result contained no child query IDs',
+          code: undefined,
         },
       });
     } else {
