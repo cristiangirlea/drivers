@@ -106,7 +106,7 @@ rules:
     - michal-lorenc-cepiga_snow
     # - piotr-bulawa_snow  # temporarily OOO
     - michal-hofman_snow
-    - dawid-heyman_snow
+    - maxymilian-kowalski_snow
     - marcin-erbel_snow
   gosnowflake:
     - piotr-fus_snow
