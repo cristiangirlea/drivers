@@ -137,6 +137,34 @@ export type ConnectionOptions = Record<string, unknown> & {
   serverSessionKeepAlive?: boolean;
 
   /**
+   * Enables caching of MFA, external-browser ID, and OAuth tokens.
+   *
+   * See {@link https://docs.snowflake.com/en/developer-guide/node-js/nodejs-driver-authenticate#authentication-token-caching}
+   *
+   * @default true
+   */
+  clientStoreTemporaryCredential?: boolean;
+
+  /**
+   * Specifies the token to use for authentication. Set this option if you set the authenticator option to:
+   * * OAUTH
+   * * PROGRAMMATIC_ACCESS_TOKEN
+   * * WORKLOAD_IDENTITY
+   */
+  token?: string;
+
+  /**
+   * Specifies the path to a file containing the token for authentication.
+   *
+   * This option works similarly to the `token` property, but retrieves the token value by reading the specified file from disk.
+   *
+   * If `token` is not provided, the driver will attempt to read the token from this file for suitable token-based authenticators.
+   *
+   * If both `token` and `tokenFilePath` are set, `token` takes precedence and this file path will be ignored.
+   */
+  tokenFilePath?: string;
+
+  /**
    * When true, the driver does not keep a client-side query context cache.
    * No context is sent on requests, and context returned by the server is ignored.
    *
