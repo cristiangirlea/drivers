@@ -1,8 +1,13 @@
 use crate::BRIDGE;
 use crate::error::{BridgeError, ConnectionOperation, UnusableConnection};
 use crate::session_params::KnownSessionParameters;
+use sf_core::apis::database_driver_v1::connection::WrapperIdentity as CoreWrapperIdentity;
 use sf_core::apis::database_driver_v1::{ApiError, ConnectionInfo, ConnectionUsability};
+use sf_core::config::param_names;
+use sf_core::config::rest_parameters::BrowserOpenFn;
+use sf_core::config::settings::Setting;
 use sf_core::handle_manager::Handle;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
@@ -29,10 +34,34 @@ impl Drop for Handles {
     }
 }
 
+/// Owns the core connection and database handles behind one JS `Connection`,
+/// tracks its state (never connected, connected, closed), and holds the lock
+/// that keeps `connect` and `destroy` from overlapping.
+///
+/// It is separate from the napi `Connection` because that object belongs to
+/// JavaScript: its methods only borrow it and cannot hand it to work that
+/// outlives the call. `connect`, `execute`, query-status polling and `destroy`
+/// all run as async tasks, so each task takes a clone of `Session` instead.
+/// Cloning is cheap; all clones share the same handles.
+///
+/// The handles are released exactly once: by a successful `close`, or when the
+/// last clone is dropped, i.e. the JS object is garbage-collected and no task
+/// still uses it.
+///
+/// `connection.rs` only converts JS arguments and results; anything about the
+/// core connection's lifecycle lives here.
 #[derive(Clone)]
 pub(crate) struct Session {
     handles: Arc<Handles>,
     connect_lock: Arc<Mutex<()>>,
+}
+
+pub(crate) struct SessionConfig {
+    pub(crate) options: HashMap<String, Setting>,
+    pub(crate) no_connection_details: bool,
+    pub(crate) session_parameters: HashMap<String, String>,
+    pub(crate) browser_opener: Option<BrowserOpenFn>,
+    pub(crate) wrapper_identity: CoreWrapperIdentity,
 }
 
 pub(crate) struct Ready(Arc<Handles>);
@@ -44,7 +73,53 @@ impl Ready {
 }
 
 impl Session {
-    pub(crate) fn new(connection: Handle, database: Handle) -> Self {
+    pub(crate) async fn open(config: SessionConfig) -> Result<Self, ApiError> {
+        let database = BRIDGE.driver.database_new();
+        let connection = BRIDGE.driver.connection_new();
+        let session = Self::new(connection, database);
+        let adopts_tokens = config
+            .options
+            .contains_key(param_names::SESSION_TOKEN.as_str());
+
+        BRIDGE.driver.database_init(database)?;
+        BRIDGE
+            .driver
+            .connection_set_options(
+                connection,
+                config.options,
+                config.no_connection_details,
+                None,
+            )
+            .await?;
+        if !config.session_parameters.is_empty() {
+            BRIDGE
+                .driver
+                .connection_set_session_parameters(connection, config.session_parameters)
+                .await?;
+        }
+        if let Some(opener) = config.browser_opener {
+            BRIDGE
+                .driver
+                .connection_set_browser_opener(connection, opener)
+                .await?;
+        }
+        BRIDGE
+            .driver
+            .set_wrapper_identity(connection, config.wrapper_identity)
+            .await?;
+
+        // A connection built from session and master tokens never goes through `connect()`,
+        // so it is initialized here.
+        if adopts_tokens {
+            BRIDGE
+                .driver
+                .connection_init(None, connection, database)
+                .await?;
+        }
+        Ok(session)
+    }
+
+    fn new(connection: Handle, database: Handle) -> Self {
         Self {
             handles: Arc::new(Handles {
                 connection,
@@ -131,6 +206,8 @@ impl Session {
     pub(crate) async fn close(&self) -> Result<(), BridgeError> {
         let _connecting = self.connect_lock.lock().await;
         if let Some(reason) = self.unusable_reason().await {
+            // The handles stay: a released handle reads as terminated, and a connection
+            // that was never established still accepts `connect()` after a refused destroy.
             return Err(BridgeError::UnusableConnection(
                 ConnectionOperation::Destroy,
                 reason,
@@ -162,18 +239,12 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sf_core::config::param_names;
-    use sf_core::config::settings::Setting;
-    use std::collections::HashMap;
 
     fn session() -> Session {
         Session::new(BRIDGE.driver.connection_new(), BRIDGE.driver.database_new())
     }
 
     async fn session_that_adopted_tokens() -> Session {
-        let connection = BRIDGE.driver.connection_new();
-        let database = BRIDGE.driver.database_new();
-        BRIDGE.driver.database_init(database).unwrap();
         let options = HashMap::from([
             (
                 param_names::ACCOUNT.as_str().to_string(),
@@ -188,17 +259,15 @@ mod tests {
                 Setting::String("handed-over-master".to_string()),
             ),
         ]);
-        BRIDGE
-            .driver
-            .connection_set_options(connection, options, false, None)
-            .await
-            .unwrap();
-        BRIDGE
-            .driver
-            .connection_init(None, connection, database)
-            .await
-            .unwrap();
-        Session::new(connection, database)
+        Session::open(SessionConfig {
+            options,
+            no_connection_details: false,
+            session_parameters: HashMap::new(),
+            browser_opener: None,
+            wrapper_identity: CoreWrapperIdentity::default(),
+        })
+        .await
+        .unwrap()
     }
 
     async fn is_terminated(session: &Session) -> bool {

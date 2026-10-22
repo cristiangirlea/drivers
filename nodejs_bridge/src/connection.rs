@@ -1,14 +1,12 @@
-use crate::BRIDGE;
 use crate::error::{BridgeError, ToJsError, async_to_js};
 use crate::query;
 use crate::query_status::QueryStatus;
-use crate::session::Session;
+use crate::session::{Session, SessionConfig};
 use crate::session_params::KnownSessionParameters;
 use crate::statement::{ExecuteParams, Statement};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use napi_derive::napi;
-use sf_core::apis::database_driver_v1::ApiError;
 use sf_core::apis::database_driver_v1::connection::WrapperIdentity as CoreWrapperIdentity;
 use sf_core::config::param_names;
 use sf_core::config::rest_parameters::BrowserOpenFn;
@@ -29,6 +27,20 @@ pub struct WrapperIdentity {
     pub language_compiler: Option<String>,
     pub release_type: Option<String>,
     pub application_path: Option<String>,
+}
+
+impl From<WrapperIdentity> for CoreWrapperIdentity {
+    fn from(identity: WrapperIdentity) -> Self {
+        Self {
+            driver_name: identity.driver_name,
+            driver_version: identity.driver_version,
+            language_runtime: identity.language_runtime,
+            language_version: identity.language_version,
+            language_compiler: identity.language_compiler,
+            release_type: identity.release_type,
+            application_path: identity.application_path,
+        }
+    }
 }
 
 #[napi(object)]
@@ -97,67 +109,18 @@ pub struct Connection {
 impl Connection {
     #[napi(constructor)]
     pub fn new(env: &Env, params: ConnectionParams) -> Result<Self> {
-        let database_handle = BRIDGE.driver.database_new();
-        let conn_handle = BRIDGE.driver.connection_new();
-        let session = Session::new(conn_handle, database_handle);
-
-        let connection_options = params.build_connection_options();
+        let options = params.build_connection_options();
         let browser_opener = params
             .open_external_browser_callback
             .map(browser_opener_from_js)
             .transpose()?;
-
-        block_on(async {
-            BRIDGE.driver.database_init(database_handle)?;
-            BRIDGE
-                .driver
-                .connection_set_options(
-                    conn_handle,
-                    connection_options,
-                    params.no_connection_details.unwrap_or(false),
-                    None,
-                )
-                .await?;
-            if !params.session_parameters.is_empty() {
-                BRIDGE
-                    .driver
-                    .connection_set_session_parameters(conn_handle, params.session_parameters)
-                    .await?;
-            }
-            if let Some(opener) = browser_opener {
-                BRIDGE
-                    .driver
-                    .connection_set_browser_opener(conn_handle, opener)
-                    .await?;
-            }
-            let identity = &params.wrapper_identity;
-            BRIDGE
-                .driver
-                .set_wrapper_identity(
-                    conn_handle,
-                    CoreWrapperIdentity {
-                        driver_name: identity.driver_name.clone(),
-                        driver_version: identity.driver_version.clone(),
-                        language_runtime: identity.language_runtime.clone(),
-                        language_version: identity.language_version.clone(),
-                        language_compiler: identity.language_compiler.clone(),
-                        release_type: identity.release_type.clone(),
-                        application_path: identity.application_path.clone(),
-                    },
-                )
-                .await?;
-
-            // A connection built from session and master tokens never goes through `connect()`,
-            // so it is initialized here.
-            if params.token_info.is_some() {
-                BRIDGE
-                    .driver
-                    .connection_init(None, conn_handle, database_handle)
-                    .await?;
-            }
-
-            Ok::<_, ApiError>(())
-        })
+        let session = block_on(Session::open(SessionConfig {
+            options,
+            no_connection_details: params.no_connection_details.unwrap_or(false),
+            session_parameters: params.session_parameters,
+            browser_opener,
+            wrapper_identity: params.wrapper_identity.into(),
+        }))
         .map_err(|e| e.to_js_error(*env))?;
 
         Ok(Self { session })
@@ -260,8 +223,6 @@ impl Connection {
         status.is_still_running()
     }
 
-    // TODO: destroy does not release core handles when the connection was never
-    // established.
     #[napi]
     pub fn destroy(&self, env: &Env) -> Result<AsyncBlock<()>> {
         let session = self.session.clone();
