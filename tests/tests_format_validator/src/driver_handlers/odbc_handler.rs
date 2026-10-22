@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 
 use super::base_handler::{BaseDriverHandler, BehaviorDifferenceLocation, TestMethod};
 use crate::behavior_differences_utils::compile_bd_regex;
+use crate::behavior_differences_utils::load_behavior_difference_files;
 use crate::behavior_differences_utils::parse_behavior_differences_descriptions as parse_behavior_differences_descriptions_util;
 
 static BD_REFERENCE_REGEX: LazyLock<Regex> = LazyLock::new(|| compile_bd_regex(r"({bd})"));
@@ -66,19 +67,27 @@ impl BaseDriverHandler for OdbcHandler {
     }
 
     fn parse_behavior_differences_descriptions(&self) -> Result<HashMap<String, String>> {
+        let mut descriptions = HashMap::new();
         let behavior_difference_file_path = self.get_behavior_differences_file_path();
-        if !behavior_difference_file_path.exists() {
-            return Ok(HashMap::new());
+        if behavior_difference_file_path.exists() {
+            let content =
+                fs::read_to_string(&behavior_difference_file_path).with_context(|| {
+                    format!(
+                        "Failed to read Behavior Difference file: {}",
+                        behavior_difference_file_path.display()
+                    )
+                })?;
+            descriptions.extend(parse_behavior_differences_descriptions_util(&content)?);
         }
 
-        let content = fs::read_to_string(&behavior_difference_file_path).with_context(|| {
-            format!(
-                "Failed to read Behavior Difference file: {}",
-                behavior_difference_file_path.display()
-            )
-        })?;
-
-        parse_behavior_differences_descriptions_util(&content)
+        let files_dir = self
+            .workspace_root
+            .join("odbc_tests")
+            .join("behavior_differences");
+        for (id, description) in load_behavior_difference_files(&files_dir)? {
+            descriptions.entry(id).or_insert(description);
+        }
+        Ok(descriptions)
     }
 
     fn extract_test_methods(&self, content: &str) -> Vec<TestMethod> {
@@ -400,5 +409,33 @@ mod tests {
         );
         assert!(QUOTED_BD_ID_REGEX.is_match(r#""BD#78""#));
         assert!(QUOTED_BD_ID_REGEX.is_match(r#""BD#private-key-password-renamed""#));
+    }
+
+    #[test]
+    fn loads_monolith_key_and_legacy_id_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let odbc_tests = dir.path().join("odbc_tests");
+        let area = odbc_tests.join("behavior_differences").join("put-get");
+        fs::create_dir_all(&area).unwrap();
+        fs::write(
+            odbc_tests.join("BehaviorDifferences.yaml"),
+            "behavior_differences:\n  1:\n    name: \"Still in the monolith\"\n",
+        )
+        .unwrap();
+        fs::write(
+            area.join("put-expands-leading-tilde.yaml"),
+            "name: \"PUT expands a leading tilde\"\ntype: enhancement\nlegacy_id: 82\n",
+        )
+        .unwrap();
+
+        let descriptions = OdbcHandler::new(dir.path().to_path_buf())
+            .parse_behavior_differences_descriptions()
+            .unwrap();
+        assert!(descriptions
+            .get("BD#1")
+            .is_some_and(|text| text.contains("Still in the monolith")));
+        let from_slug = descriptions.get("BD#put-expands-leading-tilde").cloned();
+        assert_eq!(descriptions.get("BD#82").cloned(), from_slug);
+        assert!(from_slug.is_some_and(|text| text.contains("PUT expands a leading tilde")));
     }
 }

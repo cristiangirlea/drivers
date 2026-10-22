@@ -6,14 +6,16 @@ Monolith file shape (every driver):
     <positive_int_id>:
       <fields...>
 
-Python also accepts one file per entry under python/behavior_differences/<area>/<slug>.yaml.
-The file body is the entry itself (no behavior_differences wrapper). The slug is the id.
-A new Python integer key in the monolith is rejected. Deleting an existing Python integer
-key is allowed only when exactly one of those files sets legacy_id to that key, and the
-key is no longer in the monolith. That legacy_id stays valid after the deletion is in the
+Python and ODBC also accept one file per entry under
+``<driver>/behavior_differences/<area>/<slug>.yaml`` (``python/behavior_differences`` or
+``odbc_tests/behavior_differences``). The file body is the entry itself (no
+behavior_differences wrapper). The slug is the id. A new Python or ODBC integer key in
+the monolith is rejected. Deleting an existing Python or ODBC integer key is allowed
+only when exactly one of those files sets legacy_id to that key, and the key is no
+longer in the monolith. That legacy_id stays valid after the deletion is in the
 baseline. The baseline is HEAD locally and BD_BASE_SHA in CI (the pull-request base),
 because ``pre-commit run --all-files`` checks out a tree that already contains the change.
-JDBC, ODBC, and Node.js stay integer-only; removals there are still forbidden.
+JDBC and Node.js stay integer-only; removals there are still forbidden.
 
 Per-entry schema:
 
@@ -33,10 +35,10 @@ Per-entry schema:
     description (str) — extra context, migration notes, spec links.
     old_driver_behavior (str) — behavior of the legacy/reference driver.
     new_driver_behavior (str) — behavior of the universal driver.
-    legacy_id (int) — Python files only. The monolith integer this file replaces.
-      Required when that integer is removed versus the baseline, and rejected while
-      the integer is still a key in the monolith. It stays set after the baseline
-      itself no longer has the key, so BD#<integer> keeps resolving.
+    legacy_id (int) — Python and ODBC files only. The monolith integer this file
+      replaces. Required when that integer is removed versus the baseline, and
+      rejected while the integer is still a key in the monolith. It stays set after
+      the baseline itself no longer has the key, so BD#<integer> keeps resolving.
 
   ODBC-only rule:
     When reviewed is true, status_rationale must be a non-empty string.
@@ -52,10 +54,10 @@ Per-entry schema:
     - The raw ID-line count must equal the number of unique parsed entries; a
       mismatch means a duplicate key silently dropped an entry on load.
     - Only the fields listed above are allowed (no unknown keys). legacy_id is
-      allowed on Python per-file entries only.
-    - Entries must not be removed versus the baseline, except a Python integer key
-      replaced by a file whose legacy_id is that key. The file keeps legacy_id
-      after that deletion is committed.
+      allowed on Python and ODBC per-file entries only.
+    - Entries must not be removed versus the baseline, except a Python or ODBC
+      integer key replaced by a file whose legacy_id is that key. The file keeps
+      legacy_id after that deletion is committed.
 """
 
 from __future__ import annotations
@@ -152,6 +154,7 @@ _MAX_SLUG_LEN = 64
 # stay on the integer-key monolith only.
 GATED_FILE_DIRS: dict[str, str] = {
     "python/BehaviorDifferences.yaml": "python/behavior_differences",
+    "odbc_tests/BehaviorDifferences.yaml": "odbc_tests/behavior_differences",
 }
 
 ODBC_BD_RELPATH = "odbc_tests/BehaviorDifferences.yaml"
@@ -451,11 +454,18 @@ def _legacy_id_value(prefix: str, raw: object) -> tuple[int | None, str | None]:
     return raw, None
 
 
-def check_bd_files(dir_label: str, files: list[tuple[str, str]]) -> BdFilesCheck:
+def check_bd_files(
+    dir_label: str,
+    files: list[tuple[str, str]],
+    *,
+    require_status_rationale: bool = False,
+) -> BdFilesCheck:
     """Validate per-file entries.
 
     ``files`` is ``(path relative to dir_label, YAML text)`` using forward
-    slashes, each expected to be ``<area>/<slug>.yaml``.
+    slashes, each expected to be ``<area>/<slug>.yaml``. ODBC passes
+    ``require_status_rationale`` so a reviewed entry still needs a non-empty
+    ``status_rationale``.
     """
     errors: list[str] = []
     legacy_ids: dict[int, str] = {}
@@ -502,7 +512,7 @@ def check_bd_files(dir_label: str, files: list[tuple[str, str]]) -> BdFilesCheck
                 path_label,
                 data,
                 known_fields=FILE_KNOWN_FIELDS,
-                require_status_rationale=False,
+                require_status_rationale=require_status_rationale,
             )
         )
 
@@ -588,7 +598,11 @@ def validate() -> list[str]:
             errors.append(f"{gated_file_dir}: expected a directory of <area>/<slug>.yaml files")
             continue
 
-        file_check = check_bd_files(gated_file_dir, _read_bd_dir(dir_path))
+        file_check = check_bd_files(
+            gated_file_dir,
+            _read_bd_dir(dir_path),
+            require_status_rationale=git_relpath == ODBC_BD_RELPATH,
+        )
         errors.extend(file_check.errors)
         errors.extend(
             check_migration(

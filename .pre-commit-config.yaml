@@ -154,11 +154,11 @@ repos:
         language: system
     -   id: behavior-differences-validator
         name: Behavioral Differences format check
-        description: Validate behavior-difference schema (monolith YAML and Python per-file entries)
+        description: Validate behavior-difference schema (monolith YAML and per-file entries)
         entry: python3 scripts/validate_behavior_differences.py
         pass_filenames: false
         additional_dependencies: ['pyyaml']
-        files: ^(odbc_tests|python|jdbc|nodejs)/BehaviorDifferences\.yaml$|^python/behavior_differences/.+\.yaml$|^scripts/validate_behavior_differences\.py$
+        files: ^(odbc_tests|python|jdbc|nodejs)/BehaviorDifferences\.yaml$|^(python|odbc_tests)/behavior_differences/.+\.yaml$|^scripts/validate_behavior_differences\.py$
         language: python
     -   id: behavior-differences-validator-test
         name: Behavioral Differences validator tests

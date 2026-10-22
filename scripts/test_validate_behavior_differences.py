@@ -21,6 +21,9 @@ MODULE_PATH = ROOT / "scripts" / "validate_behavior_differences.py"
 PYTHON_BD = "python/BehaviorDifferences.yaml"
 GATED_DIR = "python/behavior_differences"
 LEGACY_PATH = f"{GATED_DIR}/auth/private-key-password-renamed.yaml"
+ODBC_BD = "odbc_tests/BehaviorDifferences.yaml"
+ODBC_DIR = "odbc_tests/behavior_differences"
+ODBC_LEGACY_PATH = f"{ODBC_DIR}/put-get/put-expands-leading-tilde.yaml"
 
 
 def _load():
@@ -89,6 +92,62 @@ class ValidateBehaviorDifferencesTests(unittest.TestCase):
         )
         self.assertEqual(result.removed, {5})
         self.assertFalse(any("removed" in err for err in result.errors))
+
+    def test_new_odbc_integer_key_is_rejected(self) -> None:
+        result = self.mod.check_monolith_text(
+            ODBC_BD,
+            _monolith(1, 99),
+            {1},
+            gated_file_dir=ODBC_DIR,
+        )
+        self.assertTrue(
+            any("BD-99" in err and "new entries must be a file" in err for err in result.errors)
+        )
+        self.assertEqual(result.removed, set())
+
+    def test_odbc_removal_is_reported_for_legacy_id_pairing(self) -> None:
+        result = self.mod.check_monolith_text(
+            ODBC_BD,
+            _monolith(1),
+            {1, 82},
+            gated_file_dir=ODBC_DIR,
+        )
+        self.assertEqual(result.removed, {82})
+        self.assertFalse(any("removed" in err for err in result.errors))
+
+    def test_odbc_legacy_id_pairs_with_a_removal(self) -> None:
+        errors = self.mod.check_migration(ODBC_BD, {1}, {82}, {82: ODBC_LEGACY_PATH})
+        self.assertEqual(errors, [])
+
+    def test_odbc_reviewed_file_requires_status_rationale(self) -> None:
+        reviewed = "\n".join(
+            [
+                'name: "Example"',
+                "status: allowed",
+                "type: bugfix",
+                "reviewed: true",
+                "impact: low",
+                "is_breaking_change: false",
+                "",
+            ]
+        )
+        missing = self.mod.check_bd_files(
+            ODBC_DIR,
+            [("put-get/put-expands-leading-tilde.yaml", reviewed)],
+            require_status_rationale=True,
+        )
+        self.assertTrue(any("status_rationale" in err for err in missing.errors))
+        present = self.mod.check_bd_files(
+            ODBC_DIR,
+            [
+                (
+                    "put-get/put-expands-leading-tilde.yaml",
+                    reviewed + 'status_rationale: "Accepted."\n',
+                )
+            ],
+            require_status_rationale=True,
+        )
+        self.assertEqual(present.errors, [])
 
     def test_jdbc_removal_is_an_error(self) -> None:
         result = self.mod.check_monolith_text(
