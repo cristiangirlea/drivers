@@ -1,29 +1,5 @@
 
 behavior_differences:
-  1:
-    name: "Header of a gzip-compressed file does not contain filename"
-    status: allowed
-    type: bug
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-
-  2:
-    name: "DEFLATE compression type option is now correctly auto-detected"
-    status: allowed
-    type: bugfix
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-
-  3:
-    name: "BROTLI compression type option is now supported"
-    status: allowed
-    type: enhancement
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-
   5:
     name: "Private key password parameter name changed"
     status: allowed
@@ -124,61 +100,6 @@ behavior_differences:
       Raises ValueError for unsupported HTTP methods (only 'get' and 'post' are accepted).
     description: |
       Internal API used by Snowflake CLI via connection.rest.request().
-
-  18:
-    name: "JSONResultBatch supports Arrow and Pandas conversion"
-    status: allowed
-    type: enhancement
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    old_driver_behavior: |
-      `JSONResultBatch.to_arrow()` and `JSONResultBatch.to_pandas()` raise `NotSupportedError` because JSON-format chunks have no Arrow representation.
-    new_driver_behavior: |
-      `JSONResultBatch` and `ArrowResultBatch` are backward-compatibility aliases for the Arrow-backed `ResultBatch`.
-      `to_arrow()`, `to_pandas()`, and `create_iter(iter_unit=TABLE_UNIT)` all work on every batch regardless of its class.
-
-  19:
-    name: "write_pandas create_temp_table parameter removed"
-    status: allowed
-    type: api_incompatibility
-    reviewed: true
-    is_breaking_change: true
-    impact: low
-    old_driver_behavior: |
-      `create_temp_table=True` is accepted as a deprecated boolean alias for `table_type='temp'`; the legacy
-      connector translates it and emits a `DeprecationWarning` directing callers to `table_type='temp'` instead.
-      This parameter has never been removed as of legacy connector v4.7.1.
-    new_driver_behavior: |
-      The `create_temp_table` parameter no longer exists on either the sync or async `write_pandas` signature.
-      Passing `create_temp_table=...` raises `TypeError: write_pandas() got an unexpected keyword argument
-      'create_temp_table'` instead of being translated and warned about.
-    description: |
-      An earlier revision of the universal driver restored a connector-level warn-and-translate shim for
-      `create_temp_table` to match the legacy connector's own signature. Investigation showed that shim has no
-      real caller: Snowpark's own `Session.write_pandas` (`snowpark-python/src/snowflake/snowpark/session.py:3536-3624`)
-      already translates `create_temp_table` to `table_type` — with its own deprecation warning — at its own layer,
-      before ever calling the connector's `write_pandas`, and always forwards `table_type=` only. No real Snowpark
-      caller passes `create_temp_table` through to the connector, so removing the parameter entirely is safe in
-      practice despite being a breaking change relative to the legacy connector's own public signature.
-
-  20:
-    name: "ResultBatch does not expose session_manager or http_config"
-    status: allowed
-    type: api_incompatibility
-    reviewed: true
-    is_breaking_change: true
-    impact: low
-    old_driver_behavior: |
-      `ResultBatch` exposes `session_manager` (get/set) and `http_config` (get/set)
-      properties used to control HTTP behavior for chunk downloads when the connection is no
-      longer active. A cloned `SessionManager` is serialized with the batch, allowing chunk
-      downloads without an active connection.
-    new_driver_behavior: |
-      `ResultBatch` does not have `session_manager` or `http_config` properties.
-      Chunk fetching is handled internally by the Rust core, so there is no Python-level HTTP
-      session management to configure on individual batches. After deserializing a `ResultBatch`
-      (e.g. via pickle), a live `Connection` may be provided but is not required for a chunk download.
 
   21:
     name: "Closed cursor raises InterfaceError on all operations"
@@ -295,33 +216,6 @@ behavior_differences:
       Both attributes are read-only properties. Assignment raises
       `AttributeError`.
 
-  27:
-    name: "S3 endpoint for cn-* regions delegated to AWS SDK"
-    status: allowed
-    type: enhancement
-    reviewed: true
-    is_breaking_change: false
-    impact: high
-    old_driver_behavior: |
-      For S3 stages in China regions (`cn-*`), the old connector unconditionally constructs
-      the endpoint as `https://<bucket>.s3.<region>.amazonaws.com.cn` in
-      `S3StorageClient.transfer_accelerate_config` (`s3_storage_client.py`), regardless of the
-      `useS3RegionalUrl` / `useRegionalUrl` flags returned by GS. This is required because the
-      old connector uses its own REST client for PUT/GET and does not go through `boto3`'s
-      endpoint resolver for transfers.
-    new_driver_behavior: |
-      The universal driver only sets an explicit S3 endpoint when either
-      `stageInfo.endpoint` is set (FIPS / VPCE / custom override) or
-      `useS3RegionalUrl || useRegionalUrl` is true. For a `cn-*` region without any of those
-      flags, no endpoint override is configured and `aws-sdk-s3`'s default endpoint resolver
-      is trusted to pick `amazonaws.com.cn` from the region. This matches snowflake-jdbc
-      (`SnowflakeS3Client.java`) and libsnowflakeclient (`SnowflakeS3Client.cpp`), which both
-      delegate to their respective AWS SDKs in the same conditions.
-    description: |
-      The Python connector is the outlier among reference drivers: JDBC and libsnowflakeclient
-      already trust the AWS SDK partition resolver for `cn-*` when no regional-URL flag is set.
-      Verification on a real `cn-*` stage end-to-end is still pending.
-
   28:
     name: "oauth_enable_refresh_tokens parameter has no effect"
     status: allowed
@@ -377,29 +271,6 @@ behavior_differences:
       happen to also read the Basic header on a `client_secret_post`
       request will only see the body form from the universal driver.
 
-  30:
-    name: "enable_stage_s3_privatelink_for_us_east_1 renamed to use_s3_regional_url"
-    status: allowed
-    type: api_incompatibility
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    old_driver_behavior: |
-      `enable_stage_s3_privatelink_for_us_east_1` is the connection kwarg / session
-      parameter that forces PUT/GET to use the S3 regional endpoint
-      (`s3.<region>.amazonaws.com[.cn]`) instead of the global one. Required for
-      accounts using PrivateLink-to-S3 and for Snowpipe Streaming. The misleading
-      `_for_us_east_1` suffix is historical: the feature applies to any S3 region.
-    new_driver_behavior: |
-      `use_s3_regional_url` is the canonical connection kwarg. The name matches
-      the `StageInfo.use_s3_regional_url` field that drives endpoint selection
-      and aligns with libsnowflakeclient's connection-level `use_s3_regional_url`
-      attribute. `enable_stage_s3_privatelink_for_us_east_1` is accepted as a
-      deprecated alias and emits a `DeprecationWarning`. The server-pushed session
-      parameter `ENABLE_STAGE_S3_PRIVATELINK_FOR_US_EAST_1` continues to be honored
-      verbatim (it is the same string all reference drivers — Python, JDBC,
-      libsnowflakeclient — read from the login response).
-
   31:
     name: "HTTP_PROXY/HTTPS_PROXY override explicit proxy parameters"
     status: unknown
@@ -423,34 +294,6 @@ behavior_differences:
       `proxy_host`/`proxy_port` (or a `proxy` URL) is used and the environment
       variables are ignored. `use_proxy_env=False` turns environment-variable
       proxy pickup off.
-
-  32:
-    name: "Azure Blob PUT does not set Content-Encoding header"
-    status: allowed
-    type: unknown
-    reviewed: true
-    impact: low
-    is_breaking_change: false
-    old_driver_behavior: |
-      The Python connector sets `Content-Encoding: utf-8` on Azure Blob single-shot
-      PUT (the upload-chunk path in `azure_storage_client.py`) and
-      `x-ms-blob-content-encoding: utf-8` on the block-list commit (the final PUT
-      that finalizes a multi-block upload of a large file). The value is wrong:
-      `utf-8` is a character encoding, not an HTTP content coding (RFC 9110 §8.4
-      expects values like `gzip`, `br`, `deflate`, `zstd`, `identity`). Azure
-      tolerates the wrong value but persists it as a blob property echoed on
-      subsequent GETs.
-    new_driver_behavior: |
-      The universal driver omits `Content-Encoding` and `x-ms-blob-content-encoding`
-      entirely on Azure PUT, matching the Snowflake JDBC and libsnowflakeclient
-      drivers, which also omit them. The contract applies to every Azure PUT
-      codepath in UD, present and future. Existing blobs uploaded by the legacy
-      Python connector retain their stored `Content-Encoding: utf-8` property;
-      reading them with the new driver still works, because no driver acts on
-      the property when downloading.
-    description: |
-      Unification of the behavior with the JDBC and libsnowflakeclient drivers.
-      No user-facing change, not worth additional logic.
 
   33:
     name: "Concurrent interactive auth prompts are serialized (disable_parallel_user_prompt)"
@@ -575,92 +418,6 @@ behavior_differences:
       a plaintext `http://` IdP token endpoint (rare; typically an internal proxy) must switch
       to `https://`.
 
-  39:
-    name: "Failed GET download no longer leaves an orphaned .part file"
-    status: allowed
-    type: bugfix
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    status_rationale: |
-      The legacy connector staged downloads in a `<dst>.part` file but never removed it on the
-      failure path, so an interrupted GET left an orphaned `.part` behind. The universal driver
-      removes the staging file on failure, so a failed download leaves no debris. The improvement
-      is accepted.
-    old_driver_behavior: |
-      The legacy connector downloads to an intermediate `<dst>.part` file
-      (`SnowflakeStorageClient.intermediate_dst_path`) and renames it to the final path only on
-      full success. On a failed or interrupted GET (chunk error, digest/decryption failure, or
-      retry exhaustion) `finish_download` takes its failure branch, which only removes a
-      pre-existing final file and never unlinks the `.part` (`delete_client_data` cleans only the
-      separate `tmp_dir`). An orphaned `<dst>.part` is therefore left behind in the destination
-      directory until the user removes it manually. The final destination path itself is not
-      corrupted, because the rename to it happens only on success.
-    new_driver_behavior: |
-      GET downloads assemble into a sibling `<dst>.part` staging file and rename it to the final
-      destination only after the transfer completes successfully (and, for client-side-encrypted
-      files, only after the SHA-256 content digest verifies). The user-visible destination path is
-      therefore only ever a complete file. On failure the driver drains any in-flight chunk writes
-      and then removes the `.part` staging file, so a failed download leaves the filesystem clean.
-      (A client-side-encrypted download stages ciphertext in a separate temporary file that is
-      likewise removed on failure and unlinked once decrypted.) The only residue possible is after
-      a hard process kill (SIGKILL / power loss), where at most a single `<dst>.part` can remain —
-      self-documenting, and overwritten by the next download of the same file rather than
-      accumulating. The contract is cloud-generic (S3, Azure, and GCS).
-
-  40:
-    name: "Azure SAS refresh triggers on any 403, not only token-expiry-reason matches"
-    status: allowed
-    type: enhancement
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    old_driver_behavior: |
-      On an Azure Blob 403 the Python connector only refreshes the SAS when the
-      403 reason phrase matches one of two hard-coded strings in
-      `azure_storage_client.py`'s `TOKEN_EXPIRATION_ERR_MESSAGE`
-      ("Signature not valid in the specified time frame", "Server failed to
-      authenticate the request."). `_has_expired_token` gates on
-      `response.status_code == 403 and any(msg in response.reason ...)` — a
-      reason-gated trigger, not status-only. Any 403 whose reason is outside that
-      two-string set is therefore not refreshed and the operation fails: a
-      recoverable expiry reported with a different reason phrase, or a response
-      that carries no reason phrase at all. (CONFIRMED from source.)
-    new_driver_behavior: |
-      The universal driver refreshes on ANY Azure 403 (`is_expired_sas_error`
-      returns `status_code == 403`, body/reason-blind), re-issues the PUT/GET
-      query to obtain a fresh `stageInfo`, and retries with the new SAS — matching
-      the JDBC any-403 behavior, so it recovers every 403 whose reason the legacy
-      connector would not match. If the refreshed SAS is also rejected, the
-      terminal 403 still surfaces to the caller. Demonstrated by the parity test
-      `test_should_recover_when_azure_put_returns_403_regardless_of_the_reason_phrase`,
-      which forces the trigger divergence over HTTP/1.1 with a SYNTHETIC
-      non-matching reason ("Signature fields not well formed.") — a fabricated
-      stimulus that isolates the trigger-mechanism difference (the common real
-      Azure expiry reason does match legacy's gate, so what differs is the
-      mechanism, widening for any reason legacy does not list).
-
-  41:
-    name: "Terminal Azure 403 after SAS refresh is logged with outcome-tiered severity"
-    status: allowed
-    type: enhancement
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    old_driver_behavior: |
-      SAS-refresh handling on the Azure transfer path is logged at debug only, with
-      no severity tiering by outcome.
-    new_driver_behavior: |
-      Log severity tracks the outcome of the 403. A 403 that refresh recovers logs
-      at debug (no warn). A terminal non-token 403 (the refreshed SAS is still
-      rejected) logs at warn carrying status, the Azure <Code>, the reason (None on
-      HTTP/2), and a SAS-redacted URL. A failure of the refresh mechanism itself
-      logs at error. Beyond severity, the outcomes themselves diverge when the
-      refresh's re-issued GS query fails: the universal driver bounds that failure
-      and raises a terminal error, whereas the legacy connector retries the refresh
-      GS call under a query RetryCtx whose network_timeout defaults to None
-      (infinite), so it retries unboundedly rather than surfacing a terminal error.
-
   42:
     name: "enable_crl_cache removed; CRL caches controlled by independent toggles"
     status: allowed
@@ -726,58 +483,6 @@ behavior_differences:
       Neither driver sends out-of-band telemetry. The old driver keeps a
       disabled client; the universal driver omits the module.
 
-  46:
-    name: "Azure EncryptionAgent.EncryptionAlgorithm stays 256; Python-Azure emits 128"
-    status: allowed
-    type: bugfix
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    old_driver_behavior: |
-      Azure `encryptiondata` JSON: `EncryptionAgent.EncryptionAlgorithm = "AES_CBC_128"`;
-      `WrappedContentKey.Algorithm = "AES_CBC_256"` in the same blob (self-inconsistent).
-      Origin: commit 4455b4e1 (2017-10-26) introduced both fields self-consistently at 128-bit
-      (`A128KW` + `AES_CBC_128`). Commit 07309aaf (2017-11-03) changed only
-      `WrappedContentKey.Algorithm` to `AES_CBC_256`, without updating the sibling field.
-      No commit, comment, or test treats this as deliberate; `git log -S "AES_CBC_128" --all`
-      shows no revisits since 2017. JDBC had the same class of incomplete edit one week later
-      (cf776907, 2017-11-10), but its `EncryptionAgent` was already 256, so no visible split
-      resulted there.
-    new_driver_behavior: |
-      UD emits `256` for both fields on Azure, matching JDBC-Azure, ODBC-Azure, and GCS.
-      Source-confirmed (Python/JDBC/ODBC): no decrypt path reads this field's value. Python/JDBC
-      deserialize via JSON parsers that never look up `EncryptionAgent`; ODBC's Azure reader
-      slices substrings between the literal delimiters `","Algorithm"` and
-      `","KeyWrappingMetadata"`, keyed on field names, not values. Cross-driver decryption is
-      therefore unaffected either way. Not changed to match Python's `128`: that value is an
-      unrevisited 2017 editing miss, not an intentional legacy behavior, and matching it would
-      newly diverge UD from JDBC/ODBC/GCS. Both fields are static labels in every driver,
-      disconnected from the real per-file cipher (follows QSMK length; recorded separately in
-      `matdesc.keySize`).
-
-  47:
-    name: "CSE KeyWrappingMetadata.EncryptionLibrary: UD self-identifies as \"Rust(OpenSSL)\""
-    status: allowed
-    type: enhancement
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    old_driver_behavior: |
-      Azure/GCS `encryptiondata` JSON: `KeyWrappingMetadata.EncryptionLibrary = "Java 5.3.0"`,
-      hardcoded on every cloud, including Python itself.
-    new_driver_behavior: |
-      UD emits `"Rust(OpenSSL)"` for the same field on both clouds -- an honest
-      self-identification, not an oversight. Confirmed no reader anywhere consumes this value:
-      not the four legacy drivers' decrypt paths, not UD's own, and not GS's own server-side
-      parser, which validates several sibling fields (throws on a bad `EncryptionMode` or
-      `EncryptionAlgorithm`) but never reads `EncryptionLibrary`. GS's own internal C++
-      encryption library independently emits `"OpenSSL 1.0.1e-fips"` rather than `"Java 5.3.0"`
-      on its GCS path -- the same
-      self-identify-honestly pattern UD follows, not a UD-only quirk. Kept deliberately: matching
-      "Java 5.3.0" would misidentify which implementation produced the blob, which has real
-      diagnostic value during the mixed-fleet rollout period when legacy and universal drivers
-      both write objects into the same stages.
-
   48:
     name: "Error exposes structured parameter and validation_code attributes on validation failures"
     status: allowed
@@ -795,74 +500,6 @@ behavior_differences:
       parameter name) and `validation_code` (the structured sf_core `ValidationCode` enum
       value) when the error originated from a connection-config validation failure. Both
       default to `None` for errors from any other source, so existing callers are unaffected.
-
-  49:
-    name: "file_stream on a non-PUT statement raises ProgrammingError instead of being silently ignored"
-    status: allowed
-    type: enhancement
-    reviewed: true
-    is_breaking_change: true
-    impact: low
-    old_driver_behavior: |
-      `cursor.execute(sql, file_stream=...)` silently ignores the `file_stream` keyword
-      argument when `sql` is not a PUT statement; the statement runs normally and the
-      stream is never consumed.
-    new_driver_behavior: |
-      `cursor.execute(sql, file_stream=...)` raises `ProgrammingError` when `sql` is not a
-      PUT statement, so a mismatched `file_stream` argument is caught immediately instead
-      of being silently discarded.
-
-  50:
-    name: "GCS PUT on matching content re-uploads by default (honors skip_upload_on_content_match)"
-    status: allowed
-    type: bugfix
-    reviewed: false
-    is_breaking_change: true
-    impact: low
-    old_driver_behavior: |
-      On GCS, a `PUT ... OVERWRITE=TRUE` whose local payload matched the remote object's
-      stored `x-goog-meta-sfc-digest` was skipped unconditionally. This diverged from legacy
-      Python, which re-uploads on a content match unless the caller opts into skipping.
-    new_driver_behavior: |
-      GCS honors the opt-in `_skip_upload_on_content_match` cursor kwarg like S3 and Azure.
-      With the flag off (the default), a content-matching `PUT ... OVERWRITE=TRUE` re-uploads,
-      matching legacy Python; the content-match skip fires only when the caller opts in.
-
-  51:
-    name: "fetch_pandas_all/fetch_pandas_batches: no pandas.concat kwarg routing"
-    status: allowed
-    type: api_incompatibility
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    old_driver_behavior: |
-      Legacy's `_fetch_pandas_all` (`result_set.py:268-280` in the legacy connector) fetches
-      results in per-batch Arrow chunks and explicitly calls
-      `pandas.concat(dataframes, ignore_index=True, **concat_kwargs)`. Any kwarg passed to
-      `fetch_pandas_all`/`fetch_pandas_batches` that matches `pandas.concat`'s signature
-      (e.g. `sort`, `keys`, `copy`) is specially routed to that concat call rather than to
-      `Table.to_pandas`.
-    new_driver_behavior: |
-      The universal driver obtains the full result as a single, already-consolidated Arrow
-      Table directly from the Rust core (`collect_arrow_table`/`collect_arrow_table_async`)
-      — there is no per-chunk Python-level `pandas.concat` step, so there is nothing to route
-      `pandas.concat`-specific kwargs to. `fetch_pandas_all`/`fetch_pandas_batches` pop only
-      `force_microsecond_precision` (the Arrow-conversion parameter) and forward every other
-      kwarg straight to `pyarrow.Table.to_pandas`. Kwargs that are genuine `Table.to_pandas`
-      options (`split_blocks`, `self_destruct`, `zero_copy_only`, `types_mapper`, etc.) work
-      correctly. `pandas.concat`-specific kwargs (`sort`, `keys`, `copy`, ...) that don't
-      also happen to be `Table.to_pandas` options now raise `TypeError` from `to_pandas`
-      instead of being silently applied to a concat step that no longer exists.
-    description: |
-      Architectural consequence of fetching the full result set as one already-merged Arrow
-      Table from the core rather than legacy's per-chunk-then-concat approach — not a bug to
-      fix, since there's no concat step for `pandas.concat` kwargs to attach to. Distinct from
-      the `fetch_arrow_all`/`fetch_pandas_all` kwargs-forwarding bugfix (both sync and async
-      previously dropped or misrouted kwargs entirely regardless of this architectural
-      difference); that bug is now fixed, and genuine `Table.to_pandas` kwargs are forwarded
-      correctly. Only kwargs that are exclusively `pandas.concat`-specific remain
-      unsupported, and only because the concat step itself doesn't exist in the new
-      architecture.
 
   52:
     name: "login_timeout, network_timeout, and socket_timeout connection getters are now implemented"
@@ -1138,59 +775,6 @@ behavior_differences:
       Worth a migration-guide callout for users who relied on custom `log.path`/rotation settings,
       but that's a docs follow-up, not a driver change.
 
-  81:
-    name: "PUT resolves relative source paths to absolute canonical form before upload"
-    status: allowed
-    type: enhancement
-    reviewed: true
-    is_breaking_change: true
-    impact: medium
-    status_rationale: |
-      Aligns the universal driver with legacy JDBC's `file.getCanonicalPath()`. The legacy Python
-      connector calls `os.path.expanduser` on every source path, then `os.path.abspath` only
-      `if not os.path.isabs(file_name)` — so a path that was already absolute skips lexical
-      normalization entirely and any `..` in it is left for the OS to resolve at file-access
-      time, while a relative path is lexically normalized (CWD-prefixed, `..` collapsed by
-      string manipulation, symlinks not followed). The universal driver's `dunce::canonicalize`
-      always performs full filesystem-aware resolution — CWD, `..`, and symlinks — regardless of
-      whether the input was already absolute. For the common case (no symlinked directory
-      component) the two agree. Impact is raised to medium (from an earlier `low`) because for a
-      *relative* source path with a symlinked directory component followed by `..`, legacy
-      Python's lexical `normpath` collapse can select a different file than the universal
-      driver's filesystem-aware resolution — not just a differently-named stage object.
-    old_driver_behavior: |
-      The legacy Python connector (`file_transfer_agent.py`, `_expand_filenames`) calls
-      `os.path.expanduser` on every source path first. It then calls `os.path.abspath` only when
-      `not os.path.isabs(file_name)`:
-      - Relative input: `abspath` prepends the process CWD and collapses `..` segments purely
-        lexically (`os.path.normpath`) — it does not consult the filesystem, so a symlinked
-        directory component is not resolved before the `..` is applied. `/tmp/symlinkdir/../b`
-        (relative to CWD) can lexically collapse to a path outside `symlinkdir`'s real target,
-        selecting a different file than filesystem-aware resolution would (or none at all).
-      - Already-absolute input: no lexical normalization is applied at all; the raw string
-        (including any `..`) is handed to `glob.glob`/the OS as-is, which resolves it using
-        normal filesystem semantics at access time — so for already-absolute paths, legacy
-        Python's *effective* file selection already matches filesystem-aware resolution.
-      - Symlinks are never followed by `abspath` itself; a symlinked source file
-        `link.csv -> real.csv` was therefore uploaded to the stage as `link.csv` (the symlink's
-        own name), since `os.path.basename` only looks at the final path segment.
-    new_driver_behavior: |
-      Each matched local source path is resolved via `dunce::canonicalize` (equivalent to
-      `std::fs::canonicalize` on Unix): CWD-relative made absolute, `..` collapsed, symlinks
-      followed at every path component — filesystem-aware, not lexical. For non-symlink inputs
-      (and for already-absolute symlink-free inputs) this matches legacy Python's effective
-      behavior. For a symlinked source `link.csv -> real.csv` the stage object name becomes
-      `real.csv` (the target's basename), matching legacy JDBC's `getCanonicalPath` behaviour.
-      For a *relative* path with a symlinked directory component followed by `..`, this can
-      resolve to a different real file than legacy Python's lexical collapse would have selected.
-    description: |
-      Reference: legacy Python `file_transfer_agent.py` `_expand_filenames` (`os.path.expanduser`
-      then conditionally `os.path.abspath`);
-      legacy JDBC `SnowflakeFileTransferAgent.expandFileNames` (`file.getCanonicalPath()`).
-      Applications that PUT symlinked source files and rely on the stage object name matching
-      the symlink's own basename will observe the name change to the target's basename.
-      Non-symlink workflows are unaffected.
-
   94:
     name: "workload_identity_aws_use_outbound_token connection parameter removed"
     status: fixed
@@ -1354,24 +938,6 @@ behavior_differences:
       a case where only one is installed now reports correctly instead of
       following whichever happens to be installed.
 
-  92:
-    name: "fetch_pandas_all/fetch_pandas_batches accept JSON result sets"
-    status: allowed
-    type: enhancement
-    reviewed: true
-    is_breaking_change: true
-    impact: medium
-    old_driver_behavior: |
-      `fetch_pandas_all()`/`fetch_pandas_batches()` and the `fetch_arrow_*` equivalents
-      raise `NotSupportedError` unless the server returned `queryResultFormat: arrow`,
-      so they reject `SHOW`, `DESCRIBE`, `SET`, DDL and PUT/GET result sets.
-    new_driver_behavior: |
-      They return a pandas `DataFrame` (or an Arrow table) for every result set; the
-      JSON rowset is converted to Arrow, and no result-format check rejects the fetch.
-    description: |
-      The cursor-level counterpart of entry 18, which records the same capability on
-      `ResultBatch`.
-
   93:
     name: "executemany() rewrite failure for a non-VALUES INSERT raises ProgrammingError instead of InterfaceError"
     status: allowed
@@ -1394,23 +960,6 @@ behavior_differences:
       cursor. Errno-based handlers and `except Error` still match. `except
       InterfaceError` does not; `except DatabaseError` / `except
       ProgrammingError` match only the new driver.
-
-  95:
-    name: "put_get_max_attempts has no upper-bound clamp"
-    status: allowed
-    type: api_incompatibility
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    old_driver_behavior: |
-      Legacy PUT/GET retry-count settings are clamped to an upper bound, so a configured
-      value such as 101 is not used as-is.
-    new_driver_behavior: |
-      `put_get_max_attempts` accepts any positive integer including 101. Values <= 0 fall
-      back to the default of 6; there is no upper clamp.
-    description: |
-      Pinned by sf_core `put_get_max_attempts_has_no_upper_bound_unlike_old_drivers_clamp`.
-      Callers who set a count above the legacy cap get more PUT/GET attempts than before.
 
   96:
     name: "Native Okta authenticator-request logical failures drop the Snowflake message"
@@ -1519,28 +1068,6 @@ behavior_differences:
       Passing `iobound_tpe_limit` to `connect()` emits a `DeprecationWarning`
       and has no effect. `Connection.iobound_tpe_limit` does not exist.
 
-  102:
-    name: "GET result 'file' value for a multi-level stage subdirectory"
-    status: allowed
-    type: bugfix
-    reviewed: true
-    is_breaking_change: false
-    impact: low
-    old_driver_behavior: |
-      For a GET where the source key has more than one directory level (e.g.
-      `prefix/subdir/file.csv`), the `file` column of the result strips only the first path
-      segment, leaving the remaining segments in the value (`subdir/file.csv`).
-    new_driver_behavior: |
-      The `file` column of a GET result always reports the local file's basename
-      (`file.csv`), regardless of how many directory levels the source key had.
-    description: |
-      For a source key with a single directory level — a stage path with one prefix
-      segment, the common case — both drivers already reported the same basename value;
-      the new driver previously reported the full, un-stripped source key including every
-      directory level, which was a defect fixed by this change. The residual difference
-      documented here is limited to source keys with two or more directory levels, where
-      the old driver's single-segment strip still leaves part of the path in the value.
-
   103:
     name: "Removes converter_class parameter from SnowflakeConnection"
     status: allowed
@@ -1626,44 +1153,3 @@ behavior_differences:
       existing `except` / `isinstance` code does not break immediately, and may be removed
       later. `except HttpError` (and similar) no longer matches those failures.
 
-  107:
-    name: "Removes file-transfer and type-helper symbols from snowflake.connector.constants"
-    status: allowed
-    type: api_incompatibility
-    reviewed: true
-    is_breaking_change: true
-    impact: medium
-    old_driver_behavior: |
-      `snowflake.connector.constants` exports `DIRS`, `FileTransferType`, `ResultStatus`,
-      `CMD_TYPE_UPLOAD`, `CMD_TYPE_DOWNLOAD`, `S3_FS`, `AZURE_FS`, `GCS_FS`, `LOCAL_FS`,
-      `FILE_PROTOCOL`, `S3_MAX_PART_SIZE`, `S3_MIN_PART_SIZE`, `S3_MAX_PARTS`,
-      `AZURE_CHUNK_SIZE`, `S3_CHUNK_SIZE`, `get_binary_types()`, `get_string_types()`,
-      `get_number_types()`, `get_timestamp_types()`, `is_binary_type_name()`,
-      `is_string_type_name()`, `is_number_type_name()`, `is_timestamp_type_name()`,
-      `is_date_type_name()`, `array_pa_type()`, `map_pa_type()`, `struct_pa_type()`,
-      `vector_pa_type()`.
-    new_driver_behavior: |
-      Those symbols are not exported; accessing them raises `AttributeError`.
-      `QueryStatus` remains available on the module.
-    description: |
-      File-transfer sizing, cloud FS labels, and type-name helpers were implementation
-      details of the old Python PUT/GET and converter stacks. That logic now lives in the
-      new driver, so exposing the constants from Python would be misleading and unused.
-
-  108:
-    name: "Removes DownloadMetrics, RemoteChunkInfo, and related symbols from result_batch"
-    status: allowed
-    type: api_incompatibility
-    reviewed: true
-    is_breaking_change: true
-    impact: low
-    old_driver_behavior: |
-      `snowflake.connector.result_batch` exports `DownloadMetrics`, `RemoteChunkInfo`,
-      `DOWNLOAD_TIMEOUT`, `MAX_DOWNLOAD_RETRY`, `SSE_C_AES`, `SSE_C_ALGORITHM`, and
-      `SSE_C_KEY`.
-    new_driver_behavior: |
-      Those symbols do not exist; accessing them raises `AttributeError`.
-    description: |
-      Chunk download, retry budgets, and SSE-C handling moved into the new driver. The
-      Python `ResultBatch` surface is limited to iteration / Arrow / pandas conversion, so
-      the old download-metrics and SSE constants have no Python-side consumer.

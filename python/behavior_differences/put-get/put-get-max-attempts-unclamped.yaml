@@ -1,0 +1,16 @@
+name: "put_get_max_attempts has no upper-bound clamp"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 95
+old_driver_behavior: |
+  Legacy PUT/GET retry-count settings are clamped to an upper bound, so a configured
+  value such as 101 is not used as-is.
+new_driver_behavior: |
+  `put_get_max_attempts` accepts any positive integer including 101. Values <= 0 fall
+  back to the default of 6; there is no upper clamp.
+description: |
+  Pinned by sf_core `put_get_max_attempts_has_no_upper_bound_unlike_old_drivers_clamp`.
+  Callers who set a count above the legacy cap get more PUT/GET attempts than before.

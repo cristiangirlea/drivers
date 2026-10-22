@@ -1,0 +1,20 @@
+name: "Terminal Azure 403 after SAS refresh is logged with outcome-tiered severity"
+status: allowed
+type: enhancement
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 41
+old_driver_behavior: |
+  SAS-refresh handling on the Azure transfer path is logged at debug only, with
+  no severity tiering by outcome.
+new_driver_behavior: |
+  Log severity tracks the outcome of the 403. A 403 that refresh recovers logs
+  at debug (no warn). A terminal non-token 403 (the refreshed SAS is still
+  rejected) logs at warn carrying status, the Azure <Code>, the reason (None on
+  HTTP/2), and a SAS-redacted URL. A failure of the refresh mechanism itself
+  logs at error. Beyond severity, the outcomes themselves diverge when the
+  refresh's re-issued GS query fails: the universal driver bounds that failure
+  and raises a terminal error, whereas the legacy connector retries the refresh
+  GS call under a query RetryCtx whose network_timeout defaults to None
+  (infinite), so it retries unboundedly rather than surfacing a terminal error.

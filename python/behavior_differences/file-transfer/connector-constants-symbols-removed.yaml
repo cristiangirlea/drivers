@@ -1,0 +1,23 @@
+name: "Removes file-transfer and type-helper symbols from snowflake.connector.constants"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 107
+old_driver_behavior: |
+  `snowflake.connector.constants` exports `DIRS`, `FileTransferType`, `ResultStatus`,
+  `CMD_TYPE_UPLOAD`, `CMD_TYPE_DOWNLOAD`, `S3_FS`, `AZURE_FS`, `GCS_FS`, `LOCAL_FS`,
+  `FILE_PROTOCOL`, `S3_MAX_PART_SIZE`, `S3_MIN_PART_SIZE`, `S3_MAX_PARTS`,
+  `AZURE_CHUNK_SIZE`, `S3_CHUNK_SIZE`, `get_binary_types()`, `get_string_types()`,
+  `get_number_types()`, `get_timestamp_types()`, `is_binary_type_name()`,
+  `is_string_type_name()`, `is_number_type_name()`, `is_timestamp_type_name()`,
+  `is_date_type_name()`, `array_pa_type()`, `map_pa_type()`, `struct_pa_type()`,
+  `vector_pa_type()`.
+new_driver_behavior: |
+  Those symbols are not exported; accessing them raises `AttributeError`.
+  `QueryStatus` remains available on the module.
+description: |
+  File-transfer sizing, cloud FS labels, and type-name helpers were implementation
+  details of the old Python PUT/GET and converter stacks. That logic now lives in the
+  new driver, so exposing the constants from Python would be misleading and unused.

@@ -1,0 +1,31 @@
+name: "Azure SAS refresh triggers on any 403, not only token-expiry-reason matches"
+status: allowed
+type: enhancement
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 40
+old_driver_behavior: |
+  On an Azure Blob 403 the Python connector only refreshes the SAS when the
+  403 reason phrase matches one of two hard-coded strings in
+  `azure_storage_client.py`'s `TOKEN_EXPIRATION_ERR_MESSAGE`
+  ("Signature not valid in the specified time frame", "Server failed to
+  authenticate the request."). `_has_expired_token` gates on
+  `response.status_code == 403 and any(msg in response.reason ...)` — a
+  reason-gated trigger, not status-only. Any 403 whose reason is outside that
+  two-string set is therefore not refreshed and the operation fails: a
+  recoverable expiry reported with a different reason phrase, or a response
+  that carries no reason phrase at all. (CONFIRMED from source.)
+new_driver_behavior: |
+  The universal driver refreshes on ANY Azure 403 (`is_expired_sas_error`
+  returns `status_code == 403`, body/reason-blind), re-issues the PUT/GET
+  query to obtain a fresh `stageInfo`, and retries with the new SAS — matching
+  the JDBC any-403 behavior, so it recovers every 403 whose reason the legacy
+  connector would not match. If the refreshed SAS is also rejected, the
+  terminal 403 still surfaces to the caller. Demonstrated by the parity test
+  `test_should_recover_when_azure_put_returns_403_regardless_of_the_reason_phrase`,
+  which forces the trigger divergence over HTTP/1.1 with a SYNTHETIC
+  non-matching reason ("Signature fields not well formed.") — a fabricated
+  stimulus that isolates the trigger-mechanism difference (the common real
+  Azure expiry reason does match legacy's gate, so what differs is the
+  mechanism, widening for any reason legacy does not list).

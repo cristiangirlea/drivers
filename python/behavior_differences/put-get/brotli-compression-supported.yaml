@@ -1,0 +1,7 @@
+name: "BROTLI compression type option is now supported"
+status: allowed
+type: enhancement
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 3

@@ -1,0 +1,7 @@
+name: "DEFLATE compression type option is now correctly auto-detected"
+status: allowed
+type: bugfix
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 2

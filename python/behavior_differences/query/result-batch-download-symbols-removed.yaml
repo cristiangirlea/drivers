@@ -1,0 +1,17 @@
+name: "Removes DownloadMetrics, RemoteChunkInfo, and related symbols from result_batch"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 108
+old_driver_behavior: |
+  `snowflake.connector.result_batch` exports `DownloadMetrics`, `RemoteChunkInfo`,
+  `DOWNLOAD_TIMEOUT`, `MAX_DOWNLOAD_RETRY`, `SSE_C_AES`, `SSE_C_ALGORITHM`, and
+  `SSE_C_KEY`.
+new_driver_behavior: |
+  Those symbols do not exist; accessing them raises `AttributeError`.
+description: |
+  Chunk download, retry budgets, and SSE-C handling moved into the new driver. The
+  Python `ResultBatch` surface is limited to iteration / Arrow / pandas conversion, so
+  the old download-metrics and SSE constants have no Python-side consumer.

@@ -1,0 +1,17 @@
+name: "ResultBatch does not expose session_manager or http_config"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 20
+old_driver_behavior: |
+  `ResultBatch` exposes `session_manager` (get/set) and `http_config` (get/set)
+  properties used to control HTTP behavior for chunk downloads when the connection is no
+  longer active. A cloned `SessionManager` is serialized with the batch, allowing chunk
+  downloads without an active connection.
+new_driver_behavior: |
+  `ResultBatch` does not have `session_manager` or `http_config` properties.
+  Chunk fetching is handled internally by the Rust core, so there is no Python-level HTTP
+  session management to configure on individual batches. After deserializing a `ResultBatch`
+  (e.g. via pickle), a live `Connection` may be provided but is not required for a chunk download.

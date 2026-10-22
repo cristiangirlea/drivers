@@ -1,0 +1,35 @@
+name: "fetch_pandas_all/fetch_pandas_batches: no pandas.concat kwarg routing"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 51
+old_driver_behavior: |
+  Legacy's `_fetch_pandas_all` (`result_set.py:268-280` in the legacy connector) fetches
+  results in per-batch Arrow chunks and explicitly calls
+  `pandas.concat(dataframes, ignore_index=True, **concat_kwargs)`. Any kwarg passed to
+  `fetch_pandas_all`/`fetch_pandas_batches` that matches `pandas.concat`'s signature
+  (e.g. `sort`, `keys`, `copy`) is specially routed to that concat call rather than to
+  `Table.to_pandas`.
+new_driver_behavior: |
+  The universal driver obtains the full result as a single, already-consolidated Arrow
+  Table directly from the Rust core (`collect_arrow_table`/`collect_arrow_table_async`)
+  — there is no per-chunk Python-level `pandas.concat` step, so there is nothing to route
+  `pandas.concat`-specific kwargs to. `fetch_pandas_all`/`fetch_pandas_batches` pop only
+  `force_microsecond_precision` (the Arrow-conversion parameter) and forward every other
+  kwarg straight to `pyarrow.Table.to_pandas`. Kwargs that are genuine `Table.to_pandas`
+  options (`split_blocks`, `self_destruct`, `zero_copy_only`, `types_mapper`, etc.) work
+  correctly. `pandas.concat`-specific kwargs (`sort`, `keys`, `copy`, ...) that don't
+  also happen to be `Table.to_pandas` options now raise `TypeError` from `to_pandas`
+  instead of being silently applied to a concat step that no longer exists.
+description: |
+  Architectural consequence of fetching the full result set as one already-merged Arrow
+  Table from the core rather than legacy's per-chunk-then-concat approach — not a bug to
+  fix, since there's no concat step for `pandas.concat` kwargs to attach to. Distinct from
+  the `fetch_arrow_all`/`fetch_pandas_all` kwargs-forwarding bugfix (both sync and async
+  previously dropped or misrouted kwargs entirely regardless of this architectural
+  difference); that bug is now fixed, and genuine `Table.to_pandas` kwargs are forwarded
+  correctly. Only kwargs that are exclusively `pandas.concat`-specific remain
+  unsupported, and only because the concat step itself doesn't exist in the new
+  architecture.

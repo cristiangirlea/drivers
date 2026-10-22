@@ -1,0 +1,7 @@
+name: "Header of a gzip-compressed file does not contain filename"
+status: allowed
+type: bug
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 1
