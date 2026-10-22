@@ -131,7 +131,9 @@ describe('SNOWFLAKE_JWT authentication', () => {
         await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject({
           message: isRunningNewDriverWithBD('BD#74')
             ? 'Failed to login: Authentication failed'
-            : 'error:1C800064:Provider routines::bad decrypt',
+            : expect.stringMatching(
+                /^error:1C800064:Provider routines::bad decrypt$|^error:1E08010C:DECODER routines::unsupported$/,
+              ),
         });
 
         // Then There is error returned

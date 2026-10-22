@@ -1467,8 +1467,9 @@ behavior_differences:
     is_breaking_change: true
     impact: low
     old_driver_behavior: |
-      createPrivateKey throws
-      `error:1C800064:Provider routines::bad decrypt`.
+      createPrivateKey throws the OpenSSL wrong-passphrase error.
+      OpenSSL 3.0 reports `error:1C800064:Provider routines::bad decrypt`.
+      OpenSSL 3.5 reports `error:1E08010C:DECODER routines::unsupported`.
     new_driver_behavior: |
       connect rejects with `Failed to login: Authentication failed`. The
       passphrase detail stays on an intermediate error the Node binding does
