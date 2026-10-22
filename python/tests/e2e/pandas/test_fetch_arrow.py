@@ -16,8 +16,6 @@ from datetime import time
 import pyarrow as pa
 import pytest
 
-from tests.e2e.types.utils import assert_connection_is_open
-
 
 LARGE_RESULT_SET_ROW_COUNT = 100_000
 
@@ -87,11 +85,8 @@ class TestFetchArrowAll:
         ids=[c[0] for c in ARROW_TYPE_CASES],
     )
     def test_should_fetch_type_name_with_null_as_pyarrow_table(
-        self, execute_query, cursor, type_name, value_expr, null_expr, check, _empty_column_arrow_type_check
+        self, cursor, type_name, value_expr, null_expr, check, _empty_column_arrow_type_check
     ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
         # And Query "ALTER SESSION SET TIMEZONE = 'UTC'" is executed
         cursor.execute("ALTER SESSION SET TIMEZONE = 'UTC'")
 
@@ -111,10 +106,7 @@ class TestFetchArrowAll:
         # And Column VAL should have the correct value for <type_name>
         assert check(result.column("VAL")[0].as_py())
 
-    def test_should_return_none_from_fetch_arrow_all_for_empty_result_set(self, execute_query, cursor):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_return_none_from_fetch_arrow_all_for_empty_result_set(self, cursor):
         # When Query "SELECT 1 AS id WHERE 1=0" is executed
         cursor.execute("SELECT 1 AS id WHERE 1=0")
 
@@ -130,11 +122,8 @@ class TestFetchArrowAll:
         ids=[c[0] for c in ARROW_TYPE_CASES],
     )
     def test_should_return_empty_type_name_column_with_correct_arrow_type_when_force_return_table_is_true(
-        self, execute_query, cursor, type_name, value_expr, _null_expr, _check, empty_column_arrow_type_check
+        self, cursor, type_name, value_expr, _null_expr, _check, empty_column_arrow_type_check
     ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
         # When Query "SELECT <value_expr> AS col WHERE 1=0" is executed
         cursor.execute(f"SELECT {value_expr} AS col WHERE 1=0")
 
@@ -148,10 +137,7 @@ class TestFetchArrowAll:
         # And Column COL should have <arrow_type> Arrow type
         assert empty_column_arrow_type_check(result.schema.field("COL").type)
 
-    def test_should_convert_scaled_fixed_number_to_decimal_via_fetch_arrow_all(self, execute_query, cursor):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_convert_scaled_fixed_number_to_decimal_via_fetch_arrow_all(self, cursor):
         # And arrow_number_to_decimal is set to True on the connection
         cursor.connection.arrow_number_to_decimal_setter = True
 
@@ -164,10 +150,7 @@ class TestFetchArrowAll:
         # Then Column PI should be Decimal128
         assert pa.types.is_decimal128(result.schema.field("PI").type)
 
-    def test_should_force_microsecond_precision_for_timestamps_via_fetch_arrow_all(self, execute_query, cursor):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_force_microsecond_precision_for_timestamps_via_fetch_arrow_all(self, cursor):
         # When Query "SELECT '2024-01-15 10:30:00.123456789'::TIMESTAMP_NTZ(9) AS ts" is executed
         cursor.execute("SELECT '2024-01-15 10:30:00.123456789'::TIMESTAMP_NTZ(9) AS ts")
 
@@ -192,10 +175,7 @@ class TestFetchArrowAll:
 class TestFetchArrowBatches:
     """Tests for fetch_arrow_batches cursor method."""
 
-    def test_should_yield_multiple_arrow_batches_for_large_result_set(self, execute_query, cursor):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_yield_multiple_arrow_batches_for_large_result_set(self, cursor):
         # When Query "SELECT seq8() as id FROM TABLE(GENERATOR(ROWCOUNT => 100000)) v" is executed
         cursor.execute(f"SELECT seq8() AS id FROM TABLE(GENERATOR(ROWCOUNT => {LARGE_RESULT_SET_ROW_COUNT})) v")
 
@@ -287,10 +267,7 @@ class TestMixedFetchModes:
 class TestResultBatchPickleArrow:
     """Tests for result batch pickle round-trip with to_arrow conversion."""
 
-    def test_should_survive_pickle_round_trip_and_convert_to_arrow(self, execute_query, cursor):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_survive_pickle_round_trip_and_convert_to_arrow(self, cursor):
         # When Query "SELECT seq4() AS id FROM TABLE(GENERATOR(ROWCOUNT => 100000)) v" is executed
         cursor.execute(f"SELECT seq4() AS id FROM TABLE(GENERATOR(ROWCOUNT => {LARGE_RESULT_SET_ROW_COUNT})) v")
 

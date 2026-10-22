@@ -19,7 +19,6 @@ import pandas as pd
 import pytest
 
 from tests.compatibility import is_old_driver
-from tests.e2e.types.utils import assert_connection_is_open
 
 
 LARGE_RESULT_SET_ROW_COUNT = 100_000
@@ -120,11 +119,8 @@ class TestFetchPandasAll:
         ids=[c[0] for c in PANDAS_TYPE_CASES],
     )
     def test_should_fetch_type_name_with_null_as_pandas_dataframe(
-        self, execute_query, cursor, type_name, value_expr, null_expr, check, _empty_column_dtype_check
+        self, cursor, type_name, value_expr, null_expr, check, _empty_column_dtype_check
     ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
         # And Query "ALTER SESSION SET TIMEZONE = 'UTC'" is executed
         cursor.execute("ALTER SESSION SET TIMEZONE = 'UTC'")
 
@@ -151,11 +147,8 @@ class TestFetchPandasAll:
         ids=[c[0] for c in PANDAS_TYPE_CASES],
     )
     def test_should_return_empty_type_name_column_with_correct_pandas_dtype(
-        self, execute_query, cursor, type_name, value_expr, _null_expr, _check, empty_column_dtype_check
+        self, cursor, type_name, value_expr, _null_expr, _check, empty_column_dtype_check
     ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
         # When Query "SELECT <value_expr> AS col WHERE 1=0" is executed
         cursor.execute(f"SELECT {value_expr} AS col WHERE 1=0")
 
@@ -169,10 +162,7 @@ class TestFetchPandasAll:
         # And Column COL should have <pandas_dtype> pandas dtype
         assert empty_column_dtype_check(result["COL"].dtype)
 
-    def test_should_convert_scaled_fixed_number_to_decimal_via_fetch_pandas_all(self, execute_query, cursor):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_convert_scaled_fixed_number_to_decimal_via_fetch_pandas_all(self, cursor):
         # And arrow_number_to_decimal is set to True on the connection
         if is_old_driver():
             cursor.connection.arrow_number_to_decimal_setter = True
@@ -188,10 +178,7 @@ class TestFetchPandasAll:
         # Then Column PI should be a Python Decimal
         assert isinstance(result["PI"].iloc[0], Decimal)
 
-    def test_should_force_microsecond_precision_for_timestamps_via_fetch_pandas_all(self, execute_query, cursor):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_force_microsecond_precision_for_timestamps_via_fetch_pandas_all(self, cursor):
         # When Query "SELECT '2024-01-15 10:30:00.123456789'::TIMESTAMP_NTZ(9) AS ts" is executed
         cursor.execute("SELECT '2024-01-15 10:30:00.123456789'::TIMESTAMP_NTZ(9) AS ts")
 
@@ -214,10 +201,7 @@ class TestFetchPandasAll:
 class TestFetchPandasBatches:
     """Tests for fetch_pandas_batches cursor method."""
 
-    def test_should_yield_multiple_pandas_dataframes_for_large_result_set(self, execute_query, cursor):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_yield_multiple_pandas_dataframes_for_large_result_set(self, cursor):
         # When Query "SELECT seq8() as id FROM TABLE(GENERATOR(ROWCOUNT => 100000)) v" is executed
         cursor.execute(f"SELECT seq8() AS id FROM TABLE(GENERATOR(ROWCOUNT => {LARGE_RESULT_SET_ROW_COUNT})) v")
 
@@ -240,10 +224,7 @@ class TestFetchPandasBatches:
 class TestResultBatchPicklePandas:
     """Tests for result batch pickle round-trip with to_pandas conversion."""
 
-    def test_should_survive_pickle_round_trip_and_convert_to_pandas(self, execute_query, cursor):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_survive_pickle_round_trip_and_convert_to_pandas(self, cursor):
         # When Query "SELECT seq4() AS id FROM TABLE(GENERATOR(ROWCOUNT => 100000)) v" is executed
         cursor.execute(f"SELECT seq4() AS id FROM TABLE(GENERATOR(ROWCOUNT => {LARGE_RESULT_SET_ROW_COUNT})) v")
 

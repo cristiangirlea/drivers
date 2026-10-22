@@ -16,7 +16,6 @@ import pyarrow as pa
 import pytest
 
 from tests.e2e.pandas.utils import execute_and_fetch, is_timedelta
-from tests.e2e.types.utils import assert_connection_is_open
 
 
 NANOS_PER_SECOND = 1_000_000_000
@@ -36,12 +35,7 @@ def _as_int64(value: int) -> int:
 
 class TestIntervalDayTimePandasOverflow:
     @pytest.mark.parametrize("sql,nanos", EXTREME_CASES, ids=["spec max", "spec min"])
-    def test_should_silently_overflow_extreme_interval_day_time_when_fetched_as_pandas(
-        self, execute_query, cursor, sql, nanos
-    ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_silently_overflow_extreme_interval_day_time_when_fetched_as_pandas(self, cursor, sql, nanos):
         # When Query selecting a spec-extreme INTERVAL DAY TO SECOND is executed
         df = execute_and_fetch(cursor, sql)
 
@@ -55,12 +49,7 @@ class TestIntervalDayTimePandasOverflow:
         assert wrapped != nanos
 
     @pytest.mark.parametrize("sql,nanos", EXTREME_CASES, ids=["spec max", "spec min"])
-    def test_should_silently_overflow_extreme_interval_day_time_when_fetched_as_arrow(
-        self, execute_query, cursor, sql, nanos
-    ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_silently_overflow_extreme_interval_day_time_when_fetched_as_arrow(self, cursor, sql, nanos):
         # When Query selecting a spec-extreme INTERVAL DAY TO SECOND is executed
         cursor.execute(sql)
         table = cursor.fetch_arrow_all()

@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import pytz
 
-from tests.e2e.types.utils import assert_connection_is_open, assert_timezone
+from tests.e2e.types.utils import assert_timezone
 
 
 LARGE_RESULT_SET_ROW_COUNT = 100_000
@@ -36,9 +36,9 @@ def sequential_timestamp(i: int) -> datetime:
 class TestDistributedFetch:
     """Tests for cursor.get_result_batches()."""
 
-    def test_should_fetch_all_rows_when_partitions_fetched_in_parallel_threads(self, execute_query, cursor):
+    def test_should_fetch_all_rows_when_partitions_fetched_in_parallel_threads(self, cursor):
         # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
+        assert not cursor.connection.is_closed()
 
         # And Query "SELECT seq8() AS id FROM TABLE(GENERATOR(ROWCOUNT => 100000)) v" is executed
         cursor.execute(f"SELECT seq8() AS id FROM TABLE(GENERATOR(ROWCOUNT => {LARGE_RESULT_SET_ROW_COUNT})) v")
@@ -69,9 +69,9 @@ class TestDistributedFetch:
         # And all ids from 0 to 99999 should be present exactly once
         assert sorted(all_ids) == list(range(LARGE_RESULT_SET_ROW_COUNT))
 
-    def test_should_preserve_row_count_and_data_sizes_across_partition_split(self, execute_query, cursor):
+    def test_should_preserve_row_count_and_data_sizes_across_partition_split(self, cursor):
         # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
+        assert not cursor.connection.is_closed()
 
         # When Query "SELECT seq8() AS id FROM TABLE(GENERATOR(ROWCOUNT => 100000)) v" is executed
         cursor.execute(f"SELECT seq8() AS id FROM TABLE(GENERATOR(ROWCOUNT => {LARGE_RESULT_SET_ROW_COUNT})) v")
@@ -95,10 +95,10 @@ class TestDistributedFetch:
             assert batch.uncompressed_size is not None and batch.uncompressed_size > 0
 
     def test_should_fetch_all_rows_when_batches_are_pickled_and_reconnected_in_parallel_threads(
-        self, execute_query, cursor, connection_factory
+        self, cursor, connection_factory
     ):
         # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
+        assert not cursor.connection.is_closed()
 
         # And Query "SELECT seq8() AS id FROM TABLE(GENERATOR(ROWCOUNT => 100000)) v" is executed
         cursor.execute(f"SELECT seq8() AS id FROM TABLE(GENERATOR(ROWCOUNT => {LARGE_RESULT_SET_ROW_COUNT})) v")
@@ -132,16 +132,16 @@ class TestDistributedFetchTimestampLtz:
     """Pickled partition fetch must retain session timezone for TIMESTAMP_LTZ conversion."""
 
     @pytest.fixture(autouse=True)
-    def _set_session_timezone(self, cursor):
-        cursor.execute(f"ALTER SESSION SET TIMEZONE = '{SESSION_TZ_NAME}'")
+    def _restore_session_timezone(self, cursor):
         yield
         cursor.execute("ALTER SESSION UNSET TIMEZONE")
 
     def test_should_preserve_session_timezone_for_timestamp_ltz_fetched_from_serializable_without_a_live_session(
-        self, execute_query, cursor
+        self, cursor
     ):
         # Given Snowflake client is logged in with a non-default session timezone
-        assert_connection_is_open(execute_query)
+        assert not cursor.connection.is_closed()
+        cursor.execute(f"ALTER SESSION SET TIMEZONE = '{SESSION_TZ_NAME}'")
 
         # When a query returning TIMESTAMP_LTZ values is executed
         cursor.execute(

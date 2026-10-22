@@ -20,7 +20,6 @@ import pytest
 from snowflake.connector.cursor import DictCursor
 from snowflake.connector.errors import ProgrammingError
 from snowflake.connector.pandas_tools import write_pandas
-from tests.e2e.types.utils import assert_connection_is_open
 
 
 SAMPLE_DATA = [
@@ -91,14 +90,9 @@ def _seed_table(connection, table_name: str, schema: str, quote_identifiers: boo
 class TestWritePandas:
     """Tests for write_pandas function."""
 
-    def test_should_write_a_dataframe_to_a_pre_created_table_and_read_it_back(
-        self, execute_query, connection, cursor, tmp_schema
-    ):
+    def test_should_write_a_dataframe_to_a_pre_created_table_and_read_it_back(self, connection, cursor, tmp_schema):
         table_name = _table("WP_BASIC")
         fq_table = f"{tmp_schema}.{table_name}"
-
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
 
         # And A temporary table with columns name STRING and score INT exists
         cursor.execute(f"CREATE OR REPLACE TEMPORARY TABLE {fq_table} (NAME STRING, SCORE INT)")
@@ -121,12 +115,9 @@ class TestWritePandas:
         result = cursor.execute(f"SELECT * FROM {fq_table}").fetchall()
         assert set(result) == set(SAMPLE_DATA)
 
-    def test_should_auto_create_a_table_from_dataframe_schema(self, execute_query, connection, cursor, tmp_schema):
+    def test_should_auto_create_a_table_from_dataframe_schema(self, connection, cursor, tmp_schema):
         table_name = _table("WP_AUTOCREATE")
         fq_table = f"{tmp_schema}.{table_name}"
-
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
 
         # When write_pandas is called with auto_create_table=True and table_type="temp"
         success, nchunks, nrows, _ = write_pandas(
@@ -148,16 +139,13 @@ class TestWritePandas:
         result = cursor.execute(f"SELECT * FROM {fq_table}").fetchall()
         assert set(result) == set(SAMPLE_DATA)
 
-    def test_should_overwrite_existing_data_with_new_data(self, execute_query, connection, cursor, tmp_schema):
+    def test_should_overwrite_existing_data_with_new_data(self, connection, cursor, tmp_schema):
         table_name = _table("WP_OVERWRITE")
         fq_table = f"{tmp_schema}.{table_name}"
         initial_data = [("Frank", 10), ("Grace", 20), ("Hank", 30)]
         initial_df = pd.DataFrame(initial_data, columns=["NAME", "SCORE"])
         new_data = [("Ivy", 99)]
         new_df = pd.DataFrame(new_data, columns=["NAME", "SCORE"])
-
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
 
         # And A temporary table with columns name STRING and score INT exists
         cursor.execute(f"CREATE OR REPLACE TEMPORARY TABLE {fq_table} (NAME STRING, SCORE INT)")
@@ -184,14 +172,11 @@ class TestWritePandas:
         result = cursor.execute(f"SELECT * FROM {fq_table}").fetchall()
         assert result == new_data
 
-    def test_should_write_dataframe_in_multiple_chunks(self, execute_query, connection, cursor, tmp_schema):
+    def test_should_write_dataframe_in_multiple_chunks(self, connection, cursor, tmp_schema):
         table_name = _table("WP_CHUNKED")
         fq_table = f"{tmp_schema}.{table_name}"
         chunk_size = 2
         expected_chunks = math.ceil(len(SAMPLE_DATA) / chunk_size)
-
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
 
         # And A temporary table with columns name STRING and score INT exists
         cursor.execute(f"CREATE OR REPLACE TEMPORARY TABLE {fq_table} (NAME STRING, SCORE INT)")
@@ -215,7 +200,7 @@ class TestWritePandas:
         result = cursor.execute(f"SELECT * FROM {fq_table}").fetchall()
         assert set(result) == set(SAMPLE_DATA)
 
-    def test_should_round_trip_multiple_data_types_through_write_pandas(self, execute_query, connection, tmp_schema):
+    def test_should_round_trip_multiple_data_types_through_write_pandas(self, connection, tmp_schema):
         table_name = _table("WP_TYPES")
         fq_table = f"{tmp_schema}.{table_name}"
         ts_tz = datetime(2026, 4, 1, 9, 30, 29, tzinfo=UTC)
@@ -232,9 +217,6 @@ class TestWritePandas:
                 "COL_TS_NTZ": [ts_ntz, ts_ntz],
             }
         )
-
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
 
         # When write_pandas is called with a multi-type DataFrame using auto_create_table=True and use_logical_type=True
         success, nchunks, nrows, _ = write_pandas(
@@ -285,10 +267,7 @@ class TestWritePandasValidation:
     use a real connection but never actually write data.
     """
 
-    def test_should_raise_programming_error_when_database_is_set_without_schema(self, execute_query, connection):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_raise_programming_error_when_database_is_set_without_schema(self, connection):
         # When write_pandas is called with database but no schema
         kwargs = {"database": "mydb"}
 
@@ -296,10 +275,7 @@ class TestWritePandasValidation:
         with pytest.raises(ProgrammingError):
             write_pandas(connection, SAMPLE_DF, "t", **kwargs)
 
-    def test_should_raise_programming_error_for_invalid_compression(self, execute_query, connection):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_raise_programming_error_for_invalid_compression(self, connection):
         # When write_pandas is called with an unsupported compression value
         kwargs = {"compression": "bzip2"}
 
@@ -307,10 +283,7 @@ class TestWritePandasValidation:
         with pytest.raises(ProgrammingError):
             write_pandas(connection, SAMPLE_DF, "t", **kwargs)
 
-    def test_should_raise_value_error_for_invalid_table_type(self, execute_query, connection):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_raise_value_error_for_invalid_table_type(self, connection):
         # When write_pandas is called with an invalid table_type
         kwargs = {"table_type": "bogus"}
 
@@ -318,10 +291,7 @@ class TestWritePandasValidation:
         with pytest.raises(ValueError):
             write_pandas(connection, SAMPLE_DF, "t", **kwargs)
 
-    def test_should_emit_user_warning_for_tz_aware_columns_without_use_logical_type(self, execute_query, connection):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_emit_user_warning_for_tz_aware_columns_without_use_logical_type(self, connection):
         # And A DataFrame with a tz-aware datetime column
         tz_df = pd.DataFrame({"ts": [datetime(2024, 1, 1, tzinfo=UTC)]})
 
@@ -338,10 +308,7 @@ class TestWritePandasValidation:
             f"Expected UserWarning about timezone, got: {[str(w.message) for w in caught]}"
         )
 
-    def test_should_emit_user_warning_for_non_standard_dataframe_index(self, execute_query, connection):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_emit_user_warning_for_non_standard_dataframe_index(self, connection):
         # And A DataFrame with a string index
         string_idx_df = pd.DataFrame({"val": [10, 20]}, index=["a", "b"])
 
@@ -358,10 +325,7 @@ class TestWritePandasValidation:
             f"Expected UserWarning about index, got: {[str(w.message) for w in caught]}"
         )
 
-    def test_should_handle_invalid_iceberg_config_keys(self, execute_query, connection, tmp_schema):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_handle_invalid_iceberg_config_keys(self, connection, tmp_schema):
         # When write_pandas is called with iceberg_config containing invalid keys
         kwargs = {"iceberg_config": {"invalid_key": "value"}}
 
@@ -381,15 +345,13 @@ class TestWritePandasValidation:
 class TestWritePandasIdentifierAndSchemaCoverage:
     """Quoted identifiers, special column names, overwrite/auto-create, and extra table columns."""
 
-    def test_should_round_trip_with_default_quoted_identifiers(self, execute_query, connection, tmp_schema):
+    def test_should_round_trip_with_default_quoted_identifiers(self, connection, tmp_schema):
         table_name = _table("WP_QUOTED")
         fq_table = _fq_table(tmp_schema, table_name, True)
         df = pd.DataFrame(
             [(1, 4.5, "t1"), (2, 7.5, "t2"), (3, 10.5, "t3")],
             columns=["id", "foot_size", "shoe_model"],
         )
-
-        assert_connection_is_open(execute_query)
 
         # When write_pandas auto-creates a table using its default quoted identifiers
         success, nchunks, nrows, _ = write_pandas(
@@ -425,13 +387,11 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         ],
     )
     def test_should_not_materialize_the_dataframe_index_as_a_table_column(
-        self, execute_query, connection, cursor, tmp_schema, index, parquet_index_field
+        self, connection, cursor, tmp_schema, index, parquet_index_field
     ):
         table_name = _table("WP_NOINDEX")
         fq_table = _fq_table(tmp_schema, table_name, True)
         df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}, index=index)
-
-        assert_connection_is_open(execute_query)
 
         # A non-default index is written into the Parquet file as a physical column;
         # a default RangeIndex is stored as metadata only and cannot leak.
@@ -473,13 +433,12 @@ class TestWritePandasIdentifierAndSchemaCoverage:
 
     @pytest.mark.parametrize("quote_identifiers", [True, False])
     def test_should_replace_schema_when_overwriting_with_auto_create(
-        self, execute_query, connection, cursor, tmp_schema, quote_identifiers
+        self, connection, cursor, tmp_schema, quote_identifiers
     ):
         table_name = _table("WP_OW_SCHEMA")
         schema = _schema_arg(tmp_schema, quote_identifiers)
         fq_table = _fq_table(tmp_schema, table_name, quote_identifiers)
 
-        assert_connection_is_open(execute_query)
         _seed_table(connection, table_name, schema, quote_identifiers)
 
         # When overwrite and auto_create replace the existing table
@@ -507,13 +466,12 @@ class TestWritePandasIdentifierAndSchemaCoverage:
 
     @pytest.mark.parametrize("quote_identifiers", [True, False])
     def test_should_reject_extra_columns_when_the_existing_schema_cannot_change(
-        self, execute_query, connection, cursor, tmp_schema, quote_identifiers
+        self, connection, cursor, tmp_schema, quote_identifiers
     ):
         table_name = _table("WP_OW_EXTRA")
         schema = _schema_arg(tmp_schema, quote_identifiers)
         fq_table = _fq_table(tmp_schema, table_name, quote_identifiers)
 
-        assert_connection_is_open(execute_query)
         _seed_table(connection, table_name, schema, quote_identifiers)
 
         # When extra columns are written without replacing the table
@@ -540,13 +498,12 @@ class TestWritePandasIdentifierAndSchemaCoverage:
 
     @pytest.mark.parametrize("quote_identifiers", [True, False])
     def test_should_leave_the_table_empty_when_overwrite_truncates_then_copy_fails(
-        self, execute_query, connection, cursor, tmp_schema, quote_identifiers
+        self, connection, cursor, tmp_schema, quote_identifiers
     ):
         table_name = _table("WP_OW_TRUNC")
         schema = _schema_arg(tmp_schema, quote_identifiers)
         fq_table = _fq_table(tmp_schema, table_name, quote_identifiers)
 
-        assert_connection_is_open(execute_query)
         _seed_table(connection, table_name, schema, quote_identifiers)
 
         # When overwrite=True with auto_create_table=False truncates before COPY, a
@@ -566,8 +523,7 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         count = cursor.execute(f"SELECT COUNT(*) FROM {fq_table}").fetchone()[0]
         assert count == 0
 
-    def test_should_raise_when_the_target_table_does_not_exist(self, execute_query, connection, tmp_schema):
-        assert_connection_is_open(execute_query)
+    def test_should_raise_when_the_target_table_does_not_exist(self, connection, tmp_schema):
         missing = _table("WP_MISSING")
 
         # When write_pandas targets a missing table without auto-create
@@ -592,16 +548,12 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         ],
     )
     @pytest.mark.parametrize("auto_create_table", [True, False])
-    def test_should_quote_special_column_names(
-        self, execute_query, connection, cursor, tmp_schema, column_names, auto_create_table
-    ):
+    def test_should_quote_special_column_names(self, connection, cursor, tmp_schema, column_names, auto_create_table):
         table_name = _table("WP_SPECIAL")
         schema = _schema_arg(tmp_schema, True)
         fq_table = _fq_table(tmp_schema, table_name, True)
         df = pd.DataFrame([("Mark", 10), ("Luke", 20)], columns=column_names)
         escaped = [name.replace('"', '""') for name in column_names]
-
-        assert_connection_is_open(execute_query)
 
         # When write_pandas writes quoted special names to an existing or auto-created table
         if not auto_create_table:
@@ -632,12 +584,10 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         if not auto_create_table:
             assert {row["id"] for row in rows} == {1, 2}
 
-    def test_should_keep_case_distinct_column_names_when_auto_creating(self, execute_query, connection, tmp_schema):
+    def test_should_keep_case_distinct_column_names_when_auto_creating(self, connection, tmp_schema):
         table_name = _table("WP_CASE")
         fq_table = _fq_table(tmp_schema, table_name, True)
         df = pd.DataFrame([(10, 11), (20, 21)], columns=["number", "Number"])
-
-        assert_connection_is_open(execute_query)
 
         # When write_pandas auto-creates columns that differ only by case
         success, _, nrows, _ = write_pandas(
@@ -661,9 +611,7 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         assert {(row["number"], row["Number"]) for row in rows} == {(10, 11), (20, 21)}
 
     @pytest.mark.parametrize("quote_identifiers", [True, False])
-    def test_should_leave_autoincrement_columns_to_the_table(
-        self, execute_query, connection, cursor, tmp_schema, quote_identifiers
-    ):
+    def test_should_leave_autoincrement_columns_to_the_table(self, connection, cursor, tmp_schema, quote_identifiers):
         table_name = _table("WP_AI")
         schema = _schema_arg(tmp_schema, quote_identifiers)
         fq_table = _fq_table(tmp_schema, table_name, quote_identifiers)
@@ -672,7 +620,6 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         balance_col = _sql_ident("balance", quote_identifiers)
         id_col = _sql_ident("id", quote_identifiers)
 
-        assert_connection_is_open(execute_query)
         cursor.execute(
             f"CREATE OR REPLACE TEMPORARY TABLE {fq_table} "
             f"({name_col} STRING, {balance_col} INT, {id_col} INT AUTOINCREMENT)"
@@ -700,9 +647,7 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         assert {(row[name_key], row[balance_key]) for row in rows} == {("Mark", 10), ("Luke", 20)}
 
     @pytest.mark.parametrize("quote_identifiers", [True, False])
-    def test_should_leave_default_columns_to_the_table(
-        self, execute_query, connection, cursor, tmp_schema, quote_identifiers
-    ):
+    def test_should_leave_default_columns_to_the_table(self, connection, cursor, tmp_schema, quote_identifiers):
         table_name = _table("WP_DEF")
         schema = _schema_arg(tmp_schema, quote_identifiers)
         fq_table = _fq_table(tmp_schema, table_name, quote_identifiers)
@@ -712,7 +657,6 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         id_col = _sql_ident("id", quote_identifiers)
         ts_col = _sql_ident("ts", quote_identifiers)
 
-        assert_connection_is_open(execute_query)
         cursor.execute(
             f"CREATE OR REPLACE TEMPORARY TABLE {fq_table} "
             f"({name_col} STRING, {balance_col} INT, "
@@ -745,12 +689,10 @@ class TestWritePandasIdentifierAndSchemaCoverage:
             assert len(row[id_key]) == 36
             assert row[ts_key] is not None
 
-    def test_should_write_an_empty_dataframe(self, execute_query, connection, cursor, tmp_schema):
+    def test_should_write_an_empty_dataframe(self, connection, cursor, tmp_schema):
         table_name = _table("WP_EMPTY")
         fq_table = _fq_table(tmp_schema, table_name, True)
         df = pd.DataFrame([], columns=["name", "balance"])
-
-        assert_connection_is_open(execute_query)
 
         # When write_pandas receives an empty DataFrame with auto-create enabled
         success, nchunks, nrows, _ = write_pandas(
@@ -770,14 +712,10 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         assert [col[0] for col in cursor.description] == ["name", "balance"]
         assert cursor.fetchall() == []
 
-    def test_should_append_when_auto_create_targets_an_existing_table(
-        self, execute_query, connection, cursor, tmp_schema
-    ):
+    def test_should_append_when_auto_create_targets_an_existing_table(self, connection, cursor, tmp_schema):
         table_name = _table("WP_AUTO_APPEND")
         fq_table = _fq_table(tmp_schema, table_name, True)
         df = pd.DataFrame({"id": [1, 2], "name": ["one", "two"]})
-
-        assert_connection_is_open(execute_query)
 
         # When auto-create writes the same DataFrame to the same table twice
         for _ in range(2):
@@ -798,7 +736,7 @@ class TestWritePandasIdentifierAndSchemaCoverage:
 
     @pytest.mark.parametrize("quote_identifiers", [True, False])
     def test_should_map_reordered_dataframe_columns_and_leave_extra_target_columns_to_defaults(
-        self, execute_query, connection, cursor, tmp_schema, quote_identifiers
+        self, connection, cursor, tmp_schema, quote_identifiers
     ):
         table_name = _table("WP_REORDER")
         schema = _schema_arg(tmp_schema, quote_identifiers)
@@ -808,7 +746,6 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         generated = _sql_ident("generated", quote_identifiers)
         df = pd.DataFrame([(20, 10), (40, 30)], columns=["second", "first"])
 
-        assert_connection_is_open(execute_query)
         cursor.execute(
             f"CREATE OR REPLACE TEMPORARY TABLE {fq_table} ({first} INT, {second} INT, {generated} INT DEFAULT 99)"
         )
@@ -830,7 +767,7 @@ class TestWritePandasIdentifierAndSchemaCoverage:
 
     @pytest.mark.parametrize("quote_identifiers", [True, False])
     def test_should_reject_dataframe_columns_missing_from_the_target_table(
-        self, execute_query, connection, cursor, tmp_schema, quote_identifiers
+        self, connection, cursor, tmp_schema, quote_identifiers
     ):
         table_name = _table("WP_EXTRA_DF")
         schema = _schema_arg(tmp_schema, quote_identifiers)
@@ -838,7 +775,6 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         existing = _sql_ident("existing", quote_identifiers)
         df = pd.DataFrame([(1, 2)], columns=["existing", "missing"])
 
-        assert_connection_is_open(execute_query)
         cursor.execute(f"CREATE OR REPLACE TEMPORARY TABLE {fq_table} ({existing} INT)")
 
         # When the DataFrame contains a column absent from the target table
@@ -854,9 +790,7 @@ class TestWritePandasIdentifierAndSchemaCoverage:
 
         assert cursor.execute(f"SELECT COUNT(*) FROM {fq_table}").fetchone()[0] == 0
 
-    def test_should_infer_timestamp_types_when_logical_types_are_enabled(
-        self, execute_query, connection, cursor, tmp_schema
-    ):
+    def test_should_infer_timestamp_types_when_logical_types_are_enabled(self, connection, cursor, tmp_schema):
         table_name = _table("WP_LOGICAL")
         fq_table = _fq_table(tmp_schema, table_name, True)
         df = pd.DataFrame(
@@ -865,8 +799,6 @@ class TestWritePandasIdentifierAndSchemaCoverage:
                 "localized": [pd.Timestamp("2026-01-02 03:04:05", tz="UTC")],
             }
         )
-
-        assert_connection_is_open(execute_query)
 
         # When write_pandas infers an auto-created table with logical types enabled
         success, _, nrows, _ = write_pandas(
@@ -889,11 +821,9 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         assert types["localized"].startswith("TIMESTAMP_LTZ")
 
     @pytest.mark.parametrize("table_type", ["", "temp", "temporary", "transient"])
-    def test_should_create_the_requested_table_type(self, execute_query, connection, tmp_schema, table_type):
+    def test_should_create_the_requested_table_type(self, connection, tmp_schema, table_type):
         table_name = _table("WP_TTYPE")
         fq_table = f"{tmp_schema}.{table_name}"
-        assert_connection_is_open(execute_query)
-
         try:
             # When write_pandas auto-creates the requested table type
             success, _, _, _ = write_pandas(
@@ -924,15 +854,12 @@ class TestWritePandasIdentifierAndSchemaCoverage:
             with connection.cursor() as cur:
                 cur.execute(f"DROP TABLE IF EXISTS {fq_table}")
 
-    def test_should_write_to_a_table_whose_name_contains_a_single_quote(
-        self, execute_query, connection, cursor, tmp_schema
-    ):
+    def test_should_write_to_a_table_whose_name_contains_a_single_quote(self, connection, cursor, tmp_schema):
         bare = f"test'table_{uuid4().hex[:8]}"
         quoted = _quote_identifier(bare)
         fq_table = f"{tmp_schema}.{quoted}"
         df = pd.DataFrame([[1], [2]], columns=["a"])
 
-        assert_connection_is_open(execute_query)
         cursor.execute(f"CREATE OR REPLACE TEMPORARY TABLE {fq_table} (A INT)")
 
         # When write_pandas targets a pre-quoted table name containing a single quote
@@ -951,12 +878,10 @@ class TestWritePandasIdentifierAndSchemaCoverage:
         rows = cursor.execute(f"SELECT A FROM {fq_table} ORDER BY A").fetchall()
         assert rows == [(1,), (2,)]
 
-    def test_should_write_a_column_name_that_already_contains_quotes(self, execute_query, connection, tmp_schema):
+    def test_should_write_a_column_name_that_already_contains_quotes(self, connection, tmp_schema):
         table_name = _table("WP_CAT")
         fq_table = _fq_table(tmp_schema, table_name, True)
         df = pd.DataFrame([[1], [2]], columns=["col_'\"cat\"'"])
-
-        assert_connection_is_open(execute_query)
 
         # When write_pandas auto-creates a column whose name already contains quotes
         success, _, nrows, _ = write_pandas(

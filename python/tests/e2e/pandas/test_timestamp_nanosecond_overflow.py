@@ -19,8 +19,6 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from tests.e2e.types.utils import assert_connection_is_open
-
 
 OUT_OF_RANGE_NS_QUERIES = [
     pytest.param(
@@ -46,12 +44,7 @@ FORCED_MICROSECOND_QUERY = "SELECT '9999-12-31 23:59:59.123456789'::TIMESTAMP_NT
 
 class TestOutOfRangeNanosecondTimestampFetch:
     @pytest.mark.parametrize("sql", OUT_OF_RANGE_NS_QUERIES)
-    def test_should_raise_error_when_fetching_out_of_range_nanosecond_timestamp_as_pandas(
-        self, execute_query, cursor, sql
-    ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_raise_error_when_fetching_out_of_range_nanosecond_timestamp_as_pandas(self, cursor, sql):
         # And Session TIMEZONE is UTC
         cursor.execute("ALTER SESSION SET TIMEZONE = 'UTC'")
 
@@ -66,12 +59,7 @@ class TestOutOfRangeNanosecondTimestampFetch:
         assert "1677-09-21" in str(exc_info.value)
 
     @pytest.mark.parametrize("sql", OUT_OF_RANGE_NS_QUERIES)
-    def test_should_raise_error_when_fetching_out_of_range_nanosecond_timestamp_as_arrow(
-        self, execute_query, cursor, sql
-    ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_raise_error_when_fetching_out_of_range_nanosecond_timestamp_as_arrow(self, cursor, sql):
         # And Session TIMEZONE is UTC
         cursor.execute("ALTER SESSION SET TIMEZONE = 'UTC'")
 
@@ -85,12 +73,7 @@ class TestOutOfRangeNanosecondTimestampFetch:
         # Then The error names the supported nanosecond range
         assert "1677-09-21" in str(exc_info.value)
 
-    def test_should_fetch_out_of_range_nanosecond_timestamp_as_arrow_when_microsecond_precision_is_forced(
-        self, execute_query, cursor
-    ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
+    def test_should_fetch_out_of_range_nanosecond_timestamp_as_arrow_when_microsecond_precision_is_forced(self, cursor):
         # And Session TIMEZONE is UTC
         cursor.execute("ALTER SESSION SET TIMEZONE = 'UTC'")
 
@@ -109,11 +92,8 @@ class TestOutOfRangeNanosecondTimestampFetch:
         assert value.microsecond == 123456
 
     def test_should_fetch_out_of_range_nanosecond_timestamp_as_pandas_when_microsecond_precision_is_forced(
-        self, execute_query, cursor
+        self, cursor
     ):
-        # Given Snowflake client is logged in
-        assert_connection_is_open(execute_query)
-
         # And Session TIMEZONE is UTC
         cursor.execute("ALTER SESSION SET TIMEZONE = 'UTC'")
 
