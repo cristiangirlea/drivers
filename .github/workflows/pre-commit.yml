@@ -128,9 +128,9 @@ jobs:
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
 
       - name: Fetch behavior-difference baseline
-        # pre-commit --all-files checks out the pull-request tree, so a diff
-        # against HEAD cannot see integer keys added or removed on the branch.
-        # The validator reads BD_BASE_SHA as that baseline.
+        # The checkout is the pull-request tree, so a diff against HEAD cannot
+        # see integer keys added or removed on the branch. The validator reads
+        # BD_BASE_SHA as that baseline.
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -141,13 +141,44 @@ jobs:
           git fetch --no-tags --depth=1 origin "${ref}:refs/bd-base"
           echo "BD_BASE_SHA=$(git rev-parse refs/bd-base)" >> "$GITHUB_ENV"
 
-      - name: Run pre-commit on all files
+      - name: Run pre-commit
         # Skip regenerate-and-git-add hooks in CI: they `git add` on an
         # ephemeral runner. The Verify ConnectionConfig and
         # Verify sf_core_providers.h steps below replace them with drift checks.
+        # pull_request and merge_group pass only the files this change touches,
+        # so each hook's `files` / `types` filter skips unrelated checks.
+        # The checkout is a merge with the current base branch, which can
+        # contain commits that landed after pull_request.base.sha. Diffing
+        # that merge against the event's base SHA counts those commits as
+        # part of this change. The file list comes from the event's base and
+        # head SHAs instead. A push to main still checks the whole tree.
         env:
           SKIP: generate-connection-config,generate-xp-providers-header
-        run: pre-commit run --all-files --show-diff-on-failure
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            pre-commit run --all-files --show-diff-on-failure
+            exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.merge_group.base_sha }}"
+            head="${{ github.event.merge_group.head_sha }}"
+          fi
+          git fetch --no-tags --depth=1 origin "$base"
+          git fetch --no-tags --depth=1 origin "$head"
+          files_raw="$(git -c core.quotepath=false diff --name-only --diff-filter=ACMRT "$base" "$head")"
+          if [ -z "$files_raw" ]; then
+            echo "No changed files to check."
+            exit 0
+          fi
+          echo "Checking changed files:"
+          printf '%s\n' "$files_raw"
+          mapfile -t files <<< "$files_raw"
+          pre-commit run --show-diff-on-failure --files "${files[@]}"
 
       - name: Verify ConnectionConfig is up to date
         # Drift check mirroring the local `generate-connection-config` hook

@@ -129,28 +129,28 @@ repos:
         description: Run Spotless checks for the JDBC module.
         entry: bash -c 'cd jdbc && bash ./gradlew spotlessCheck'
         pass_filenames: false
-        files: ^jdbc/
+        files: ^jdbc/(.*\.(java|gradle)|gradle\.properties)$
         language: system
     -   id: jdbc-checkstyle
         name: JDBC Checkstyle
         description: Run Checkstyle on JDBC main and test sources.
         entry: bash -c 'cd jdbc && bash ./gradlew checkstyleMain checkstyleTest'
         pass_filenames: false
-        files: ^jdbc/
+        files: ^jdbc/(.*\.(java|gradle)|gradle\.properties|config/checkstyle/.*)$
         language: system
     -   id: nodejs-code-format
         name: Node.js code formatting & linting
         description: Validate and autoformat the code
         entry: bash -c 'cd nodejs && npm run types:check && npm run fmt:fix && npm run lint:check'
         pass_filenames: false
-        files: ^nodejs/
+        files: ^nodejs/.*\.(ts|js|mjs|cjs|json)$
         language: system
     -   id: dotnet-checks
         name: dotnet code checks (format)
         description: Run dotnet format on changed dotnet files
         entry: bash -c 'cd dotnet && dotnet format --verify-no-changes'
         pass_filenames: false
-        files: ^dotnet/
+        files: ^dotnet/.*\.(cs|csproj|sln|props|targets|editorconfig)$
         language: system
     -   id: behavior-differences-validator
         name: Behavioral Differences format check
@@ -201,6 +201,14 @@ repos:
         description: Validate that test implementations match Gherkin feature scenarios
         entry: ./tests/tests_format_validator/run_validator.sh
         pass_filenames: false
+        files: |
+          (?x)^(
+            tests/definitions/.*\.feature
+            | tests/tests_format_validator/.*\.(rs|toml|lock|sh)
+            | (sf_core/tests|jdbc/src/test|odbc_tests|python/tests|dotnet/tests|nodejs/tests)/.*\.(rs|java|cpp|hpp|py|cs|ts|js)
+            | (odbc_tests|python|jdbc|nodejs|dotnet)/BehaviorDifferences\.yaml
+            | python/behavior_differences/.*\.yaml
+          )$
         language: system
     -   id: ai-rules-sync
         name: AI rules sync check
