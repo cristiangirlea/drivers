@@ -50,6 +50,32 @@ jobs:
           fi
           echo "Generated test data matches repository."
 
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Fetch changelog comparison base
+        id: base
+        # A depth-1 checkout is the PR head (or merge commit) and does not
+        # contain the base tree. Released version folders are frozen against
+        # that base, so the check needs the base commit itself.
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "merge_group" ]]; then
+            base="${{ github.event.merge_group.base_sha }}"
+          else
+            base="${{ github.event.pull_request.base.sha }}"
+          fi
+          git fetch --no-tags --depth=1 origin "$base"
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Check changelog fragments
+        run: python3 scripts/check_changelog.py --base "${{ steps.base.outputs.sha }}"
+
   test-matrix:
     if: github.repository_owner != 'snowflakedb'
     runs-on: ubuntu-latest
@@ -124,7 +150,7 @@ jobs:
           retention-days: 30
 
   validations-status:
-    needs: [test-data, test-matrix, test-coverage-report]
+    needs: [test-data, changelog, test-matrix, test-coverage-report]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -134,10 +160,12 @@ jobs:
           
           # Check if any validation failed or was cancelled
           if [[ "${{ needs.test-data.result }}" =~ ^(failure|cancelled)$ ]] || \
+             [[ "${{ needs.changelog.result }}" =~ ^(failure|cancelled)$ ]] || \
              [[ "${{ needs.test-matrix.result }}" =~ ^(failure|cancelled)$ ]] || \
              [[ "${{ needs.test-coverage-report.result }}" =~ ^(failure|cancelled)$ ]]; then
             echo "✗ Validations FAILED or CANCELLED"
             echo "  - test-data: ${{ needs.test-data.result }}"
+            echo "  - changelog: ${{ needs.changelog.result }}"
             echo "  - test-matrix: ${{ needs.test-matrix.result }}"
             echo "  - test-coverage-report: ${{ needs.test-coverage-report.result }}"
             exit 1
@@ -145,6 +173,7 @@ jobs:
           
           echo "✓ Validations PASSED"
           echo "  - test-data: ${{ needs.test-data.result }}"
+          echo "  - changelog: ${{ needs.changelog.result }}"
           echo "  - test-matrix: ${{ needs.test-matrix.result }}"
           echo "  - test-coverage-report: ${{ needs.test-coverage-report.result }}"
           exit 0

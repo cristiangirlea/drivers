@@ -91,6 +91,11 @@ Each driver implementation has its own testing setup and requirements. See the i
 - **ODBC**: See [odbc/README.md](odbc/README.md)
 - **JDBC**: See [jdbc/README.md](jdbc/README.md)
 
+## Changelog
+
+See the [changelog workflow](docs/changelog-workflow.md) for adding release notes,
+cutting a release, rendering `CHANGELOG.md`, and running validation.
+
 ## Test Validation
 
 The project includes a test format validator that ensures Gherkin feature files have corresponding implementations:

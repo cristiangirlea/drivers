@@ -122,6 +122,10 @@ jobs:
             --input protobuf/database_driver_v1.proto \
             --output python/src/snowflake/connector/_internal/protobuf_gen
 
+      - name: Fetch main for the changelog fragment check
+        # The changelog hook compares against origin/main. A default checkout
+        # is one commit and does not include that ref.
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
 
       - name: Fetch behavior-difference baseline
         # pre-commit --all-files checks out the pull-request tree, so a diff

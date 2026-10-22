@@ -2,6 +2,8 @@
 
 ## Upcoming Release
 
+In-progress notes are files under `changelog/unreleased/`.
+
 ## 5.1.0 (October 21, 2026)
 
 New features:

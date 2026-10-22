@@ -168,6 +168,13 @@ repos:
         additional_dependencies: ['pyyaml']
         files: ^scripts/(validate_behavior_differences\.py|test_validate_behavior_differences\.py)$
         language: python
+    -   id: changelog-fragments
+        name: Changelog fragment check
+        description: Validate changelog fragments and reject edits to shipped CHANGELOG sections
+        entry: python3 scripts/check_changelog.py --base origin/main
+        pass_filenames: false
+        files: (^[^/]+/CHANGELOG\.md$|^[^/]+/changelog/|^scripts/check_changelog\.py$)
+        language: system
     -   id: mirror-config-consistency
         name: Mirror config generation consistency
         description: Ensure committed mirror infrastructure matches its generator

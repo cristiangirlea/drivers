@@ -2,6 +2,8 @@
 
 ## Upcoming Release
 
+In-progress notes are files under `changelog/unreleased/`.
+
 ## v4.2.0
 
 Changes:
