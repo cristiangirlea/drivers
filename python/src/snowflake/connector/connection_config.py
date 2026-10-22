@@ -66,7 +66,7 @@ class ConnectionConfig(ConnectionConfigMixin):
     """
 
     connect_timeout: int | None = None
-    """TCP connect timeout in seconds for the HTTP client (0 or absent = system default)"""
+    """HTTP connect timeout in seconds for name lookup, TCP, and TLS (0 = no timeout, absent = 60)"""
 
     connection_diag_allowlist_path: str | None = None
     """Path to a pre-fetched allowlist.json; if absent the driver fetches it via system$allowlist()"""

@@ -1,8 +1,8 @@
 use super::logout::LogoutConfig;
 use super::param_registry::{
-    DEFAULT_LOGIN_TIMEOUT_SECS, DEFAULT_PUT_GET_MAX_ATTEMPTS, DEFAULT_QUERY_TIMEOUT_SECS,
-    DEFAULT_RETRY_BACKOFF_BASE_MS, DEFAULT_RETRY_BACKOFF_CAP_MS, DEFAULT_RETRY_BACKOFF_FACTOR,
-    DEFAULT_RETRY_MAX_ATTEMPTS, param_names,
+    DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_LOGIN_TIMEOUT_SECS, DEFAULT_PUT_GET_MAX_ATTEMPTS,
+    DEFAULT_QUERY_TIMEOUT_SECS, DEFAULT_RETRY_BACKOFF_BASE_MS, DEFAULT_RETRY_BACKOFF_CAP_MS,
+    DEFAULT_RETRY_BACKOFF_FACTOR, DEFAULT_RETRY_MAX_ATTEMPTS, param_names,
 };
 use super::param_store::ParamStore;
 use std::collections::BTreeSet;
@@ -335,22 +335,27 @@ pub struct TimeoutConfig {
     /// timeout, matching the legacy drivers — queries can legitimately run for
     /// hours, so any finite default risks breaking existing clients.
     pub query_timeout: Option<Duration>,
-    /// TCP connect timeout for the HTTP client. `None` means the system default.
+    /// Connect timeout (name lookup, TCP, and TLS) for the HTTP client. `None`
+    /// means no driver timer.
     pub connect_timeout: Option<Duration>,
 }
 
 impl TimeoutConfig {
     /// Resolve the timeout configuration from connection parameters.
     ///
-    /// Each field interprets a configured `0` (or an absent parameter) as
-    /// "no timeout" (`None`) via [`read_optional_duration_secs`]. Note that
-    /// `request_timeout` is not here — it is a retry-loop budget consumed as
-    /// [`RetryPolicy::http`]'s `max_elapsed`, not an outer-wrap operation timeout.
+    /// Each field interprets a configured `0` as "no timeout" (`None`) via
+    /// [`read_optional_duration_secs`]. An absent `connect_timeout` defaults to
+    /// 60 seconds. Note that `request_timeout` is not here — it is a retry-loop
+    /// budget consumed as [`RetryPolicy::http`]'s `max_elapsed`, not an outer-wrap
+    /// operation timeout.
     pub fn from_params(params: &ParamStore) -> Self {
         Self {
             login_timeout: read_optional_duration_secs(params, param_names::LOGIN_TIMEOUT),
             query_timeout: read_optional_duration_secs(params, param_names::QUERY_TIMEOUT),
-            connect_timeout: read_optional_duration_secs(params, param_names::CONNECT_TIMEOUT),
+            connect_timeout: match params.get_int(param_names::CONNECT_TIMEOUT) {
+                None => Some(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS)),
+                Some(_) => read_optional_duration_secs(params, param_names::CONNECT_TIMEOUT),
+            },
         }
     }
 }
@@ -367,7 +372,7 @@ impl Default for TimeoutConfig {
             } else {
                 Some(Duration::from_secs(DEFAULT_QUERY_TIMEOUT_SECS))
             },
-            connect_timeout: None,
+            connect_timeout: Some(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS)),
         }
     }
 }
@@ -541,6 +546,19 @@ mod tests {
         let tc = TimeoutConfig::from_params(&store);
         assert_eq!(tc.login_timeout, None);
         assert_eq!(tc.query_timeout, None);
+    }
+
+    #[test]
+    fn timeout_config_absent_connect_timeout_uses_default() {
+        let tc = TimeoutConfig::from_params(&ParamStore::new());
+        assert_eq!(tc.connect_timeout, Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn timeout_config_zero_connect_timeout_disables_timer() {
+        let store = params(&[(param_names::CONNECT_TIMEOUT.as_str(), Setting::Int(0))]);
+        let tc = TimeoutConfig::from_params(&store);
+        assert_eq!(tc.connect_timeout, None);
     }
 
     #[test]

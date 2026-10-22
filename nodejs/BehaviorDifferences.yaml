@@ -2548,3 +2548,21 @@ behavior_differences:
     new_driver_behavior: |
       The same call throws an InvalidParameterError with no `code` and the message
       "Invalid logLevel: <value>".
+
+  135:
+    name: 'HTTP connect phase times out after 60 seconds'
+    status: allowed
+    type: enhancement
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      There is no separate connect timeout. The request timeout (default 360000 ms, or
+      the timeout option) covers the whole request, including the connect.
+    new_driver_behavior: |
+      connect_timeout defaults to 60 seconds and bounds each HTTP connect (name lookup,
+      TCP handshake, and TLS). 0 leaves the connect phase without a driver timer.
+    description: |
+      The new driver uses the 60-second connect default of the old JDBC and Python
+      drivers. A connect that takes longer than 60 seconds fails here; the old driver
+      waits up to its request timeout.

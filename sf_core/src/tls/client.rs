@@ -431,9 +431,9 @@ fn build_tls_client_and_rustls_config_sync(
     }
 }
 
-/// Like [`create_tls_client_with_proxy`], but with an optional TCP connect
-/// timeout: when `connect_timeout` is `Some`, it is applied to the underlying
-/// HTTP client; when `None`, the system default is used.
+/// Like [`create_tls_client_with_proxy`], but with an optional connect timeout
+/// covering name lookup, TCP, and TLS. `None` leaves reqwest's connect timer
+/// unset.
 pub fn create_tls_client_with_proxy_and_timeouts(
     tls_config: TlsConfig,
     proxy: Option<&ProxyConfig>,

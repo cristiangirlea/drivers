@@ -367,6 +367,8 @@ pub const DEFAULT_PUT_GET_MAX_ATTEMPTS: u32 = 6;
 /// Default `login_timeout` in seconds (mirrors the `ParamDef`).
 pub const DEFAULT_LOGIN_TIMEOUT_SECS: u64 = 120;
 
+pub const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 60;
+
 /// ODBC's default `authentication_timeout` in seconds, matching the old
 /// snowflake-odbc driver's `S_DEFAULT_LOGIN_TIMEOUT`. It replaces the registry
 /// default for that wrapper only, and is applied underneath `connections.toml`
@@ -1997,7 +1999,7 @@ static PARAM_DEFS: &[ParamDef] = &[
         .value_type(ValueType::Int)
         .sensitive(false)
         .auth(false)
-        .description("TCP connect timeout in seconds for the HTTP client (0 or absent = system default)")
+        .description("HTTP connect timeout in seconds for name lookup, TCP, and TLS (0 = no timeout, absent = 60)")
         .scopes(&[ParamScope::Connection])
         .mutable_after_connect(false)
         .build(),
