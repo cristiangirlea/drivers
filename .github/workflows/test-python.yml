@@ -361,11 +361,12 @@ jobs:
       - name: Setup FIPS build environment
         uses: ./.github/actions/setup-fips-build-env
 
-      # ubuntu-24.04-arm and macOS ARM leave the pinned toolchain half-installed
-      # when the first rustc auto-installs it. The cache step below runs
-      # `rustc -vV`.
+      # ubuntu-latest and ubuntu-24.04-arm ship a rustup toolchain that already
+      # contains cargo-clippy, so the first rustc leaves the pinned toolchain
+      # half-installed. macOS ARM can fail that same install while downloading
+      # clippy. The cache step below runs `rustc -vV`.
       - name: Ensure Rust toolchain is cleanly installed
-        if: matrix.os == 'ubuntu-24.04-arm' || matrix.os == 'macos-latest'
+        if: startsWith(matrix.os, 'ubuntu') || matrix.os == 'macos-latest'
         uses: ./.github/actions/ensure-rust-toolchain
 
       - name: Restore Rust cache

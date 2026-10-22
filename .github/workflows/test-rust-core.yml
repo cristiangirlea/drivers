@@ -185,11 +185,13 @@ jobs:
         with:
           msvc-arch: ${{ matrix.msvc_arch || 'x64' }}
 
-      # ubuntu-arm and macos-arm leave the pinned toolchain half-installed when
-      # the first rustc auto-installs it. "Restore Rust cache" runs `rustc -vV`
-      # for the cache key, so the install has to finish before that step.
+      # ubuntu-x64 and ubuntu-arm ship a rustup toolchain that already contains
+      # cargo-clippy, so the first rustc leaves the pinned toolchain
+      # half-installed. macOS ARM can fail that same install while downloading
+      # clippy. "Restore Rust cache" runs `rustc -vV` for the cache key, so
+      # the install has to finish before that step.
       - name: Ensure Rust toolchain is cleanly installed
-        if: matrix.name == 'ubuntu-arm' || matrix.name == 'macos-arm'
+        if: startsWith(matrix.name, 'ubuntu-') || matrix.name == 'macos-arm'
         uses: ./.github/actions/ensure-rust-toolchain
 
       - name: Restore Rust cache
@@ -326,11 +328,12 @@ jobs:
         with:
           msvc-arch: ${{ matrix.msvc_arch || 'x64' }}
 
-      # ubuntu-arm and macos-arm leave the pinned toolchain half-installed when
-      # the first rustc auto-installs it. This job's first rustc is "Configure
-      # release artifact paths".
+      # ubuntu-x64 and ubuntu-arm ship a rustup toolchain that already contains
+      # cargo-clippy, so the first rustc leaves the pinned toolchain
+      # half-installed. macOS ARM can fail that same install while downloading
+      # clippy. This job's first rustc is "Configure release artifact paths".
       - name: Ensure Rust toolchain is cleanly installed
-        if: matrix.name == 'ubuntu-arm' || matrix.name == 'macos-arm'
+        if: startsWith(matrix.name, 'ubuntu-') || matrix.name == 'macos-arm'
         uses: ./.github/actions/ensure-rust-toolchain
 
       - name: Install unixODBC development files
