@@ -1,0 +1,15 @@
+name: "disable_console_login is not a connection parameter"
+status: unknown
+type: api_incompatibility
+reviewed: false
+is_breaking_change: true
+impact: low
+legacy_id: 99
+old_driver_behavior: |
+  `disable_console_login` defaults to `True`, so EXTERNALBROWSER asks GS for
+  the SSO URL instead of opening the console-login URL. `False` opens
+  `{host}/console/login` directly.
+new_driver_behavior: |
+  `disable_console_login` and `oauth_disable_console_login` are not
+  connection parameters. Passing either warns and has no effect.
+  EXTERNALBROWSER always requests the SSO URL from Snowflake.

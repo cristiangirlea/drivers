@@ -1,0 +1,13 @@
+name: "rest.request() validates HTTP method (internal API)"
+status: allowed
+type: enhancement
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 17
+old_driver_behavior: |
+  Does not validate the method parameter; attempts the request, which may result in an HttpError from the server.
+new_driver_behavior: |
+  Raises ValueError for unsupported HTTP methods (only 'get' and 'post' are accepted).
+description: |
+  Internal API used by Snowflake CLI via connection.rest.request().

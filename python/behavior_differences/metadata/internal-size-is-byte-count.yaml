@@ -1,0 +1,30 @@
+name: "internal_size mapped to byte count instead of the old driver's char count (V1 and V2)"
+status: fixed
+type: bug
+reviewed: false
+is_breaking_change: false
+impact: medium
+legacy_id: 55
+old_driver_behavior: |
+  `ResultMetadataV2.from_column` (JSON source) sets `internal_size = col["length"]`
+  (the JSON `length` field, the maximum character count for VARCHAR/TEXT columns).
+  `ResultMetadata` (V1) inherits the same value via
+  `ResultMetadataV2._to_result_metadata_v1()`.
+new_driver_behavior: |
+  Previously, `from_column` (proto source) set `internal_size = col.byte_length`
+  (maximum byte length) in both `ResultMetadata` (V1) and `ResultMetadataV2` (V2) —
+  each has its own `from_column` carrying the same mapping. For a `VARCHAR(100)`
+  column this returned `internal_size=400` (UTF-8, 4 bytes/char) instead of the old driver's
+  `100`. Fixed to `internal_size = col.length`, matching the old driver on every type
+  including BINARY.
+description: |
+  Root cause: PR #159's async-cursor rewrite picked `col.byte_length` for
+  `internal_size` without review of this specific field; this entry's own
+  "the new driver splits them across two slots more precisely" rationale was an unreviewed
+  guess, not a design decision — no surveyed driver (PEP 249, psycopg, PyMySQL, or
+  this repo's own JDBC/ODBC wrappers) puts byte-length in this slot. This also isn't
+  cosmetic: `snowpark-python`'s `convert_sf_to_sp_type` is a real, load-bearing
+  consumer of `internal_size`, building `StringType(length=internal_size)` for
+  `DataFrame.schema` and generated DDL — a `VARCHAR(100)` column was silently
+  reporting as `StringType(400)`. See entry 90 for the separate, still-live
+  `display_size` difference this entry previously conflated with the bug above.

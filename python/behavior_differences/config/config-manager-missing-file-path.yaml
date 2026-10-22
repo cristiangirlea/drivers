@@ -1,0 +1,11 @@
+name: "ConfigManager without file_path returns MissingConfigOptionError on option retrieval"
+status: allowed
+type: bug
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 14
+old_driver_behavior: |
+  Retrieving an option from a ConfigManager with no file_path raises ConfigManagerError about missing file_path.
+new_driver_behavior: |
+  Retrieving an option from a ConfigManager with no file_path returns an empty config and raises MissingConfigOptionError.

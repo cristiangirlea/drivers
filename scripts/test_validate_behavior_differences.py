@@ -14,6 +14,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "scripts" / "validate_behavior_differences.py"
 PYTHON_BD = "python/BehaviorDifferences.yaml"
@@ -175,7 +177,11 @@ class ValidateBehaviorDifferencesTests(unittest.TestCase):
         ids = self.mod._committed_ids(PYTHON_BD, "HEAD")
         self.assertIsNotNone(ids)
         assert ids is not None
-        self.assertTrue(ids)
+        raw = subprocess.check_output(["git", "show", f"HEAD:{PYTHON_BD}"])
+        data = yaml.safe_load(raw)
+        entries = data.get("behavior_differences", {}) if isinstance(data, dict) else {}
+        expected = {int(key) for key, entry in entries.items() if isinstance(entry, dict)}
+        self.assertEqual(ids, expected)
         self.assertTrue(all(bd_id > 0 for bd_id in ids))
         self.assertIsNone(self.mod._committed_ids(PYTHON_BD, "not-a-rev"))
 

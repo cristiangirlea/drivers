@@ -1,0 +1,12 @@
+name: "Fetching before execute raises ProgrammingError"
+status: allowed
+type: bugfix
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 22
+old_driver_behavior: |
+  Calling `fetchone`, `fetchmany`, `fetchall`, or iterating a cursor before any query has been executed has no guard, so they raise `TypeError` because the cursor's internal result state is `None`.
+new_driver_behavior: |
+  Calling `fetchone`, `fetchmany`, `fetchall`, or iterating a cursor before any query has been executed raises
+  `ProgrammingError("No results available (already consumed or not produced by this query)", errno=252009)` (`ER_NO_DATA_FOUND`).

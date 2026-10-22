@@ -1,0 +1,14 @@
+name: "iobound_tpe_limit connect parameter removed"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 101
+old_driver_behavior: |
+  `iobound_tpe_limit` is an accepted connect kwarg and a readable
+  `Connection.iobound_tpe_limit` property. When set, PUT and GET use at
+  most that many IO-bound worker threads.
+new_driver_behavior: |
+  Passing `iobound_tpe_limit` to `connect()` emits a `DeprecationWarning`
+  and has no effect. `Connection.iobound_tpe_limit` does not exist.

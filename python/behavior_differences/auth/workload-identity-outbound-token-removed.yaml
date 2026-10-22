@@ -1,0 +1,21 @@
+name: "workload_identity_aws_use_outbound_token connection parameter removed"
+status: fixed
+type: api_incompatibility
+reviewed: false
+is_breaking_change: true
+impact: low
+legacy_id: 94
+old_driver_behavior: |
+  `workload_identity_aws_use_outbound_token` (default False) is a connection kwarg that,
+  when True, makes AWS workload-identity attestation use STS GetWebIdentityToken instead of
+  the default pre-signed GetCallerIdentity method. Both the kwarg and the
+  `SNOWFLAKE_ENABLE_AWS_WIF_OUTBOUND_TOKEN` env var are honored, with the kwarg taking
+  precedence.
+new_driver_behavior: |
+  Restored: `workload_identity_aws_use_outbound_token` is accepted again as a connection
+  parameter (default False). When True for AWS WIF, the driver uses GetWebIdentityToken.
+  The connection parameter takes precedence over `SNOWFLAKE_ENABLE_AWS_WIF_OUTBOUND_TOKEN`.
+description: |
+  Recorded as allowed api_incompatibility during workload-identity test-coverage mapping
+  (source PR snowflakedb/drivers#1283). Closed by SNOW-3989948 restoring legacy
+  per-connection control.

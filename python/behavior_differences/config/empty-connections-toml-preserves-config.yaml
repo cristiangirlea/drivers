@@ -1,0 +1,11 @@
+name: "Empty connections.toml preserves config.toml connections"
+status: allowed
+type: bugfix
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 13
+old_driver_behavior: |
+  When connections.toml exists but is empty, it replaces config.toml connections with an empty set.
+new_driver_behavior: |
+  When connections.toml exists but is empty, connections from config.toml are preserved.

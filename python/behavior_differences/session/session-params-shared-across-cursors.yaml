@@ -1,0 +1,11 @@
+name: "Session parameter updates visible across cursors without execute"
+status: allowed
+type: enhancement
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 15
+old_driver_behavior: |
+  Each cursor populates its session parameters independently from query responses, so a cursor that has not executed a query will not reflect changes made by another cursor.
+new_driver_behavior: |
+  Cursor session parameters (e.g. cursor.timestamp_output_format) read from a shared connection-level cache, so changes made by one cursor are immediately visible to other cursors on the same connection without requiring a query.

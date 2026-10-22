@@ -1,0 +1,18 @@
+name: "Removes OCSP support in favor of CRLs"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: high
+legacy_id: 104
+old_driver_behavior: |
+  Certificate revocation uses OCSP, controlled by parameters such as
+  `ocsp_fail_open`, `ocsp_response_cache_filename`, and `insecure_mode`.
+new_driver_behavior: |
+  OCSP is not implemented. Certificate revocation uses CRLs, configured via
+  CRL parameters (`crl_check_mode`, `enable_crl_memory_cache`,
+  `enable_crl_file_cache`, etc.). OCSP-specific connection parameters are treated as unknown.
+description: |
+  The new driver performs TLS revocation checking with CRL support shared
+  across wrappers. OCSP was not ported; callers must migrate to CRL configuration.
+  See also BD#42 for CRL cache toggle changes.

@@ -1,0 +1,20 @@
+name: "display_size is populated for text columns; the old driver always returns None"
+status: allowed
+type: enhancement
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 90
+old_driver_behavior: |
+  `display_size` is always `None`, for every column type.
+new_driver_behavior: |
+  `from_column` sets `display_size = col.length` for TEXT/VARCHAR/CHAR/STRING
+  column types (the character count) and `None` otherwise. Applies to both
+  `ResultMetadata` (V1) and `ResultMetadataV2` (V2), which each have their own
+  `from_column`.
+description: |
+  Split out of entry 55, which previously conflated this permanent, new-driver-only
+  enhancement with the `internal_size` byte-vs-char bug (now fixed — see entry
+  55). No consumer in Snowpark's source reads `display_size` (CONFIRMED from
+  source), so this has no observed runtime impact; it's a strict improvement
+  over the old driver (extra, correct information) rather than a compatibility risk.

@@ -1,0 +1,21 @@
+name: "disable_request_pooling property removed; connect() kwarg is a no-op"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 88
+old_driver_behavior: |
+  `connect(disable_request_pooling=True)` is accepted (default `False`).
+  `Connection.disable_request_pooling` is a get/set property that toggles
+  whether HTTP sessions are reused across REST calls.
+new_driver_behavior: |
+  `Connection.disable_request_pooling` does not exist; reading it raises
+  `AttributeError`. Passing `disable_request_pooling` to `connect()` is
+  accepted for source compatibility but has no effect and emits a
+  `DeprecationWarning`.
+description: |
+  The old flag controlled reuse of Python `requests.Session` objects. The
+  new driver has no equivalent request-session pool; HTTP keep-alive on the
+  core HTTP client is internal and not user-configurable. Mapping the flag
+  onto keep-alive would invent a different feature under a legacy name.

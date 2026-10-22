@@ -1,0 +1,13 @@
+name: "MFA token caching parameter renamed"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 16
+old_driver_behavior: |
+  `client_request_mfa_token` enables MFA token caching.
+new_driver_behavior: |
+  `client_store_temporary_credential` enables MFA token caching. The legacy name
+  `client_request_mfa_token` is also accepted as a backward-compatible alias and is mapped
+  to `client_store_temporary_credential`, but emits a `DeprecationWarning`.

@@ -1,0 +1,22 @@
+name: "cursor._request_id is a str instead of a uuid.UUID object, and now warns on use"
+status: fixed
+type: api_incompatibility
+reviewed: false
+is_breaking_change: false
+impact: low
+legacy_id: 56
+old_driver_behavior: |
+  `SnowflakeCursor._request_id` is typed `uuid.UUID | None` (cursor.py:392) and holds
+  a `uuid.UUID` instance, assigned either as `uuid.uuid4()` or as
+  `uuid.UUID(str(request_id), version=4)`. Callers doing `str(cursor._request_id)`
+  get the canonical hyphenated form; callers passing it to `uuid.UUID()` directly
+  raise `AttributeError: 'UUID' object has no attribute 'replace'`. Reading the
+  attribute never warns, regardless of caller.
+new_driver_behavior: |
+  `Cursor.request_id` returns `uuid.UUID | None`. The protobuf string is
+  parsed with `uuid.UUID` and no `version` argument, so
+  `str(cursor.request_id)` is the hyphenated text the core stored, including
+  a UUID whose version nibble is not 4. An empty string is `None`.
+  `Cursor._request_id` returns that same value. The first access of
+  `_request_id` from outside `snowflake.connector.*` still emits a
+  one-time-per-process `DeprecationWarning` directing callers to `request_id`.

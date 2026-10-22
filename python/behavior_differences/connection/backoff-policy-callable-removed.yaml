@@ -1,0 +1,19 @@
+name: "backoff_policy callable parameter removed; retry backoff now configured via typed retry_backoff_* parameters with different defaults"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 58
+old_driver_behavior: |
+  `backoff_policy` accepts a callable — a generator function such as `exponential_backoff()`
+  (the default) or `mixed_backoff()`, or a fully custom one — that computes the delay before
+  each retry across every retry loop (login, query, general HTTP, PUT/GET).
+new_driver_behavior: |
+  `backoff_policy` no longer exists. The backoff curve is configured instead through four typed
+  parameters — `retry_backoff_base_ms`, `retry_backoff_cap_ms`, `retry_backoff_factor`, and
+  `retry_backoff_jitter` (one of `"none"`, `"full"`, `"decorrelated"`) — which select among
+  built-in strategies but cannot express an arbitrary custom generator. The defaults these
+  parameters resolve to also changed: 250ms initial delay (vs. legacy's 1s) and
+  `"decorrelated"` jitter (vs. legacy's `"full"`); the 2x growth factor and 16s cap are
+  unchanged.

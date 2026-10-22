@@ -1,0 +1,27 @@
+name: "connector.options module removed"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 91
+old_driver_behavior: |
+  `snowflake.connector.options` is importable, re-exporting
+  `MissingOptionalDependency`/`pandas`/`pyarrow`/`MissingPandas`/`ModuleLikeObject`/
+  `installed_pandas`/`installed_pyarrow`.
+new_driver_behavior: |
+  `snowflake.connector.options` no longer exists; importing it raises
+  `ModuleNotFoundError`. The implementation now lives in
+  `snowflake.connector._common.extras`.
+description: |
+  `MissingOptionalDependency.__init__` accepts both a positional `dep`
+  argument and the no-arg-subclass pattern, so `MissingPandas` added
+  nothing over calling `MissingOptionalDependency("pandas")` directly.
+  No other optional dependency in this file (`pyarrow`/`numpy`/`tzlocal`/`sqlalchemy`)
+  gets a dedicated subclass either.
+
+  `installed_pyarrow` mirroring `installed_pandas` was a port artifact
+  from v4's `options.py`, where pandas and pyarrow were always imported
+  together. `_common/extras.py` already resolves them independently, so
+  a case where only one is installed now reports correctly instead of
+  following whichever happens to be installed.

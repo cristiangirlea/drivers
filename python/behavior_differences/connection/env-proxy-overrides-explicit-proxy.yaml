@@ -1,0 +1,23 @@
+name: "HTTP_PROXY/HTTPS_PROXY override explicit proxy parameters"
+status: unknown
+type: api_incompatibility
+reviewed: false
+impact: medium
+legacy_id: 31
+is_breaking_change: true
+description: |
+  Callers who omit `use_proxy_env` now read `HTTP_PROXY`, `HTTPS_PROXY`,
+  and `NO_PROXY`, matching the old driver. The remaining difference is
+  which proxy is used when an environment variable and an explicit proxy
+  are both set.
+old_driver_behavior: |
+  Since 3.17.0, the old driver always consults `HTTP_PROXY`, `HTTPS_PROXY`,
+  and `NO_PROXY`. When one of those variables is set and the connection
+  also sets `proxy_host`/`proxy_port`, the environment variable is used
+  and the explicit proxy is ignored.
+new_driver_behavior: |
+  `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` are consulted when the
+  connection does not set an explicit proxy. When both are set,
+  `proxy_host`/`proxy_port` (or a `proxy` URL) is used and the environment
+  variables are ignored. `use_proxy_env=False` turns environment-variable
+  proxy pickup off.

@@ -1,0 +1,24 @@
+name: "Deprecates HTTP and internal error classes retained only for import compatibility"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 106
+old_driver_behavior: |
+  Raises (or uses as internal retry/control-flow signals): `HttpError`,
+  `InternalServerError`, `ServiceUnavailableError`, `GatewayTimeoutError`,
+  `ForbiddenError`, `RequestTimeoutError`, `BadRequest`, `BadGatewayError`,
+  `MethodNotAllowed`, `TooManyRequests`, `OtherHTTPRetryableError`,
+  `RevocationCheckError`, `RefreshTokenError`, `BindUploadError`,
+  `RequestExceedMaxRetryError`, `TokenExpiredError`, `PresignedUrlExpiredError`.
+new_driver_behavior: |
+  Those classes remain importable from `snowflake.connector.errors` but emit a
+  `DeprecationWarning` on first access and are never raised by the new driver.
+  Failures surface as PEP 249 exception types instead.
+description: |
+  HTTP retries, token refresh, revocation checks, and stage-transfer retries moved into
+  the new driver. The old typed HTTP/internal exceptions were Python-layer control-flow
+  signals that no longer participate in that path. They are kept importable only so
+  existing `except` / `isinstance` code does not break immediately, and may be removed
+  later. `except HttpError` (and similar) no longer matches those failures.

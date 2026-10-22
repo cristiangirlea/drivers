@@ -1,0 +1,21 @@
+name: "ReauthenticationRequest is not raised in MasterTokenExpired scenarios"
+status: fixed
+type: bug
+reviewed: false
+status_rationale: |
+  ReauthenticationRequest is now raised for mid-session master-token codes
+  390113/390114/390115 and login-time codes 390195/390303/390318, with the
+  real GS code preserved as errno. See entry 82 for the one remaining gap
+  (no automatic reauth for EXTERNALBROWSER).
+is_breaking_change: true
+impact: medium
+legacy_id: 44
+old_driver_behavior: |
+  The old driver raises `network.ReauthenticationRequest`, imported from
+  `snowflake.connector.network`, when the master token expires.
+new_driver_behavior: |
+  ReauthenticationRequest is raised for the codes above. It is importable
+  from both `snowflake.connector.errors` and `snowflake.connector.network`.
+  It carries a `.cause` `ProgrammingError` with the same message, errno,
+  and sqlstate. It subclasses `ProgrammingError` and emits a FutureWarning
+  that the base moves to `OperationalError` in a future major release.

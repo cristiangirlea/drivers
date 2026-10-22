@@ -1,0 +1,21 @@
+name: "Out-of-band (OOB) telemetry is not implemented"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 45
+old_driver_behavior: |
+  `snowflake.connector.telemetry_oob.TelemetryService` is still importable.
+  `enabled` always returns `False`. `enable()` stores `False` as well, so
+  `add`, `flush`, and the log methods return without queueing an event.
+  No background thread is started, and the connector does not call this
+  service. `_upload_payload` can still POST to the telemetry URL, but only
+  if `enabled` were true. A comment on that POST marks the feature disabled
+  (`SNOW-2259522`).
+new_driver_behavior: |
+  The `telemetry_oob` module and `TelemetryService` class do not exist.
+  `import snowflake.connector.telemetry_oob` raises `ModuleNotFoundError`.
+description: |
+  Neither driver sends out-of-band telemetry. The old driver keeps a
+  disabled client; the universal driver omits the module.

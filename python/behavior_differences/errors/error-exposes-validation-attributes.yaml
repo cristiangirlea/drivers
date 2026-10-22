@@ -1,0 +1,17 @@
+name: "Error exposes structured parameter and validation_code attributes on validation failures"
+status: allowed
+type: enhancement
+reviewed: true
+is_breaking_change: false
+impact: low
+legacy_id: 48
+old_driver_behavior: |
+  The legacy connector's `Error` class carries only the message, `errno`, `sqlstate`,
+  `sfqid`, and `query`. There is no attribute identifying which connection parameter
+  failed validation, and no structured code for the validation rule that fired — callers
+  can only substring-match the error message.
+new_driver_behavior: |
+  `Error` (and its subclasses) additionally expose `parameter` (the offending config
+  parameter name) and `validation_code` (the structured sf_core `ValidationCode` enum
+  value) when the error originated from a connection-config validation failure. Both
+  default to `None` for errors from any other source, so existing callers are unaffected.

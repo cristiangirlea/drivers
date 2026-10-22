@@ -1,0 +1,19 @@
+name: "Removes converter_class parameter from SnowflakeConnection"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 103
+old_driver_behavior: |
+  `connect(converter_class=...)` accepts a custom converter class; the default is
+  selected by `DefaultConverterClass()` (e.g. `SnowflakeNoConverterToPython` to skip
+  native type conversion).
+new_driver_behavior: |
+  Passing `converter_class` with a class object raises `ProgrammingError`
+  (`Unsupported connection option type for 'converter_class'`).
+  `DefaultConverterClass` does not exist (`AttributeError`).
+description: |
+  Result conversion moved into the new driver Arrow path and is no longer a
+  Python-pluggable hook. The Windows-specific `SnowflakeConverterIssue23517` workaround
+  and null-converter opt-out are not applicable under that architecture.

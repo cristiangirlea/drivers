@@ -1,0 +1,17 @@
+name: "client_fetch_threads deprecated; client_fetch_use_mp removed"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 25
+old_driver_behavior: |
+  `client_fetch_threads` controls the chunk-fetch pool size (defaulting to
+  `client_prefetch_threads`). `client_fetch_use_mp=True` switches the pool from
+  `ThreadPoolExecutor` to `ProcessPoolExecutor`.
+new_driver_behavior: |
+  `client_fetch_threads` is accepted as a deprecated alias for `client_prefetch_threads`
+  and emits a `DeprecationWarning`. The legacy `client_fetch_use_mp` parameter (which switched
+  chunk fetching from a thread pool to a process pool) has no equivalent: the universal driver
+  always uses a thread pool. Passing `client_fetch_use_mp` is accepted for source compatibility
+  but has no effect and emits a `DeprecationWarning`.

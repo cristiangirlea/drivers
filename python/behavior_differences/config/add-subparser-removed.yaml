@@ -1,0 +1,11 @@
+name: "Deprecated add_subparser method and _sub_parsers property removed"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 12
+old_driver_behavior: |
+  add_subparser() and _sub_parsers are deprecated aliases that emit DeprecationWarning.
+new_driver_behavior: |
+  add_subparser() and _sub_parsers are removed; accessing them raises AttributeError.

@@ -1,0 +1,15 @@
+name: "client_session_keep_alive[_heartbeat_frequency] setters removed"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 26
+old_driver_behavior: |
+  `Connection.client_session_keep_alive` and
+  `Connection.client_session_keep_alive_heartbeat_frequency` expose
+  setters. In the old connector both setters wrote to a private attribute
+  having no effect on the live heartbeat thread either.
+new_driver_behavior: |
+  Both attributes are read-only properties. Assignment raises
+  `AttributeError`.

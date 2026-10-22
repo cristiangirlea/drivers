@@ -1,0 +1,11 @@
+name: "CONFIG_PARSER deprecated alias removed"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 11
+old_driver_behavior: |
+  CONFIG_PARSER is a deprecated alias for CONFIG_MANAGER that emits DeprecationWarning.
+new_driver_behavior: |
+  CONFIG_PARSER module attribute no longer exists; accessing it raises AttributeError.

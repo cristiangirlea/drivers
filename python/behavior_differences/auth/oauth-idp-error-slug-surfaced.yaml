@@ -1,0 +1,18 @@
+name: "OAuth bad client secret surfaces IdP error slug instead of generic browser message"
+status: allowed
+type: enhancement
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 35
+old_driver_behavior: |
+  When `oauth_client_secret` is wrong during `OAUTH_AUTHORIZATION_CODE` or
+  `OAUTH_CLIENT_CREDENTIALS`, the legacy connector fails with a generic
+  login error such as `Invalid HTTP request from web browser. Idp
+  authentication could have failed.` The IdP's OAuth `error` slug (for example
+  `invalid_client`) is not surfaced.
+new_driver_behavior: |
+  The universal driver propagates the IdP token-endpoint error into the login
+  failure message, for example `Identity Provider responded with error:
+  invalid_client: ... OAuth flow failed`. The OAuth error slug is visible to
+  callers parsing the exception text.

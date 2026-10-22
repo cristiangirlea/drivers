@@ -1,0 +1,18 @@
+name: "EXTERNALBROWSER no longer auto-reauthenticates on mid-session master-token expiry"
+status: todo
+type: bug
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 82
+old_driver_behavior: |
+  For EXTERNALBROWSER, a mid-session master-token expiry is caught and
+  silently recovered: the driver re-runs the browser flow and retries,
+  so the in-flight query succeeds without the caller seeing an exception.
+new_driver_behavior: |
+  No authenticator auto-reauthenticates. A mid-session master-token code
+  (390113/390114/390115) raises ReauthenticationRequest instead; the
+  caller must open a new connection, which re-triggers the browser
+  prompt for EXTERNALBROWSER.
+description: |
+  Tracked under SNOW-3965431.

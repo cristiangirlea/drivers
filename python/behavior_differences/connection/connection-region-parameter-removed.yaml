@@ -1,0 +1,21 @@
+name: "Removes region parameter from SnowflakeConnection class"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: low
+legacy_id: 24
+status_rationale: |
+  Hostname construction moved to a fully-qualified account identifier or an
+  explicit host; keeping a separate region kwarg would duplicate that
+  configuration with no remaining consumer in the new driver.
+old_driver_behavior: |
+  `region` is accepted as a `connect()` kwarg and used internally to
+  construct the Snowflake hostname. `Connection.region` returns the value, emitting a
+  `PendingDeprecationWarning`. No known consumer (Airflow, Snow CLI, Snowpark,
+  SQLAlchemy) reads the property — they all store `region` independently.
+new_driver_behavior: |
+  The `region` connection parameter is not accepted and `Connection` does
+  not have a `region` property. Callers that previously relied on `region` to derive
+  the hostname must supply the fully-qualified `account` identifier (e.g.
+  `"myaccount.us-east-1"`) or set `host` explicitly instead.

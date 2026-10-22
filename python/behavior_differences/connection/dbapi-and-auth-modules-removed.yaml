@@ -1,0 +1,20 @@
+name: "Removes modules snowflake.connector.dbapi and snowflake.connector.auth (internal API)"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: true
+impact: medium
+legacy_id: 105
+old_driver_behavior: |
+  `snowflake.connector.dbapi` and `snowflake.connector.auth` (including authenticator
+  subclasses such as `AuthByOkta`, `AuthByOauth`, etc.) are importable public modules.
+new_driver_behavior: |
+  `import snowflake.connector.dbapi` raises `ModuleNotFoundError`. Authenticator
+  subclasses such as `AuthByOkta` and `AuthByOauth` are not exported from
+  `snowflake.connector.auth` (`AttributeError`).
+description: |
+  Authentication is configured via connection parameters and implemented in the new
+  driver, so the Python authenticator class hierarchy is unnecessary. A minimal
+  `snowflake.connector.auth` package stub remains for limited backward-compat symbols
+  only (e.g. `workload_identity`), not the old auth API surface. PEP 249 entry points
+  live on `snowflake.connector` itself; the separate `dbapi` module is unused.

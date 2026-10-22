@@ -1,0 +1,16 @@
+name: "oauth_enable_refresh_tokens parameter has no effect"
+status: allowed
+type: api_incompatibility
+reviewed: true
+is_breaking_change: false
+impact: medium
+legacy_id: 28
+old_driver_behavior: |
+  `oauth_enable_refresh_tokens` (default `True`) gates whether the refresh
+  token returned by the IdP is used to refresh expired access tokens.
+new_driver_behavior: |
+  `oauth_enable_refresh_tokens` is accepted for source compatibility but
+  has no effect and emits a `DeprecationWarning`. The universal driver
+  always uses the refresh token when the IdP returns one; use
+  `client_store_temporary_credential` to gate *caching* the refresh token
+  on disk.
