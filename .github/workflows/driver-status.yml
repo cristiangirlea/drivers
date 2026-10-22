@@ -69,9 +69,9 @@ jobs:
       - run: 'true'
 
   # Schedule and dispatch run whole suites by definition, so they skip the
-  # clone + paths-filter entirely. Push still runs the whole suite for any
-  # real change, but needs detection to recognise a commit that touches no
-  # buildable code at all (see the `push` case in `plan`).
+  # clone + paths-filter entirely. Push runs detection: main selects the
+  # same suites as a pull request, and a release branch uses the result
+  # only to skip a push that changes no buildable code.
   detect-changes:
     needs: scope-label-gate
     if: >-
@@ -85,7 +85,7 @@ jobs:
   # and reviewable in a single place.
   plan:
     needs: [scope-label-gate, detect-changes]
-    # always() so a skipped detect-changes (push / schedule / dispatch) does
+    # always() so a skipped detect-changes (schedule / dispatch) does
     # not suppress this job. The gate-success check still swallows unrelated
     # labels and the public-mirror no-op. A detect failure must not silently
     # turn into "run everything".
@@ -156,8 +156,9 @@ jobs:
           py_w=false; jdbc_w=false; odbc_w=false
           core_w=false; node_w=false; net_w=false
 
-          # Turn on every lane of a driver. Used by whole-suite events
-          # (push, dispatch) and by the per-driver nightly cron slots.
+          # Turn on every lane of a driver. Release-branch pushes, manual
+          # dispatch, and the per-driver nightly cron slots use this.
+          # A push to main copies detect-changes flags instead.
           enable() {
             case "$1" in
               python)    py=true; py_pkg=true; py_ref=true; py_w=true ;;
@@ -175,6 +176,34 @@ jobs:
           # detect-changes emits "true"/"false"; anything else (unset output on a
           # skipped job) must land on false rather than leaking an empty value.
           norm() { if [[ "${1:-}" == "true" ]]; then echo true; else echo false; fi; }
+
+          # Suites selected by detect-changes. A missing detect-changes run
+          # errors here: an empty output set would otherwise skip every suite.
+          apply_detected() {
+            if [[ "$DETECT_RESULT" != "success" ]]; then
+              echo "::error::detect-changes did not run for $EVENT (result=$DETECT_RESULT)."
+              exit 1
+            fi
+            py=$(norm "$RUN_PYTHON")
+            py_pkg=$(norm "$RUN_PYTHON_PACKAGING")
+            py_fips=$(norm "$RUN_PYTHON_FIPS")
+            py_ref=$(norm "$RUN_PYTHON_REFERENCE")
+            jdbc=$(norm "$RUN_JDBC")
+            jdbc_ref=$(norm "$RUN_JDBC_REFERENCE")
+            odbc=$(norm "$RUN_ODBC")
+            odbc_ref=$(norm "$RUN_ODBC_REFERENCE")
+            core=$(norm "$RUN_RUST_CORE")
+            node=$(norm "$RUN_NODEJS")
+            node_ref=$(norm "$RUN_NODEJS_REFERENCE")
+            net=$(norm "$RUN_DOTNET")
+            net_ref=$(norm "$RUN_DOTNET_REFERENCE")
+            py_w=$(norm "$PYTHON_WANTED")
+            jdbc_w=$(norm "$JDBC_WANTED")
+            odbc_w=$(norm "$ODBC_WANTED")
+            core_w=$(norm "$RUST_CORE_WANTED")
+            node_w=$(norm "$NODEJS_WANTED")
+            net_w=$(norm "$DOTNET_WANTED")
+          }
 
           emit() {
             {
@@ -213,29 +242,7 @@ jobs:
 
           case "$EVENT" in
             pull_request|merge_group)
-              if [[ "$DETECT_RESULT" != "success" ]]; then
-                echo "::error::detect-changes did not run for $EVENT (result=$DETECT_RESULT)."
-                exit 1
-              fi
-              py=$(norm "$RUN_PYTHON")
-              py_pkg=$(norm "$RUN_PYTHON_PACKAGING")
-              py_fips=$(norm "$RUN_PYTHON_FIPS")
-              py_ref=$(norm "$RUN_PYTHON_REFERENCE")
-              jdbc=$(norm "$RUN_JDBC")
-              jdbc_ref=$(norm "$RUN_JDBC_REFERENCE")
-              odbc=$(norm "$RUN_ODBC")
-              odbc_ref=$(norm "$RUN_ODBC_REFERENCE")
-              core=$(norm "$RUN_RUST_CORE")
-              node=$(norm "$RUN_NODEJS")
-              node_ref=$(norm "$RUN_NODEJS_REFERENCE")
-              net=$(norm "$RUN_DOTNET")
-              net_ref=$(norm "$RUN_DOTNET_REFERENCE")
-              py_w=$(norm "$PYTHON_WANTED")
-              jdbc_w=$(norm "$JDBC_WANTED")
-              odbc_w=$(norm "$ODBC_WANTED")
-              core_w=$(norm "$RUST_CORE_WANTED")
-              node_w=$(norm "$NODEJS_WANTED")
-              net_w=$(norm "$DOTNET_WANTED")
+              apply_detected
               # Label-only re-run of ODBC's on-demand long-running lane. Do
               # not flip odbc=true: that would also run the default matrix,
               # which detect-changes already decided. Calling test-odbc.yml
@@ -262,26 +269,33 @@ jobs:
               echo "Manual dispatch of '${DISPATCH_DRIVER:-all}':"
               ;;
             push)
-              # A push whose every file is unbuildable (docs, agent guidance)
-              # would otherwise rerun the entire matrix, because the cases
-              # below are deliberately not change-gated. Fail open: anything
-              # other than a successful detection saying "nothing to build"
-              # falls through to the full suite.
+              # detect-changes sets no_build_impact when every file is
+              # documentation or agent guidance. Release branches are not
+              # otherwise path-filtered, so this skips a changelog-only
+              # release push. On main the same flag is already folded into
+              # the copied outputs.
               if [[ "$DETECT_RESULT" == "success" && "$NO_BUILD_IMPACT" == "true" ]]; then
                 echo "Push to $REF changed no buildable code: no driver suites selected."
                 emit
                 exit 0
               fi
-              # main exercises every driver; a release branch only builds its
-              # own driver. Rust Core, Node.js and .NET have no release lines.
+              # main uses the same suite selection as a pull request. The
+              # called workflows still see event push, so a selected driver
+              # runs its merge-level matrix. A release branch runs that
+              # driver's whole suite. Rust Core, Node.js and .NET have no
+              # release lines.
               case "$REF" in
-                refs/heads/main)             enable all ;;
+                refs/heads/main)             apply_detected ;;
                 refs/heads/release/python-*) enable python ;;
                 refs/heads/release/jdbc-*)   enable jdbc ;;
                 refs/heads/release/odbc-*)   enable odbc ;;
                 *) echo "::warning::No driver suite mapped to '$REF'." ;;
               esac
-              echo "Push to $REF:"
+              if [[ "$REF" == refs/heads/main ]]; then
+                echo "Change-gated push to $REF:"
+              else
+                echo "Push to $REF:"
+              fi
               ;;
             *)
               echo "::error::Unhandled event '$EVENT'"
