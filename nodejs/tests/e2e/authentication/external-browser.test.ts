@@ -1,4 +1,16 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { once } from 'node:events';
+import { createServer, type AddressInfo } from 'node:net';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from 'vitest';
 import type { Connection, ConnectionOptions } from '../../types/sdk-types.js';
 import ErrorCode from '../../../src/constants/ErrorCode.js';
 import { TempDir } from '../utils/files.js';
@@ -40,6 +52,45 @@ function connectWithExternalBrowser(
   return connectWithBrowserAutomation(connect, () =>
     provideBrowserCredentials('success', user, password),
   );
+}
+
+async function findAvailablePort(): Promise<number> {
+  const server = createServer().listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const { port } = server.address() as AddressInfo;
+  server.close();
+  return port;
+}
+
+// Old driver listens on `::`. New driver listens on 127.0.0.1.
+// On macOS those do not conflict, so both are held. On Linux and Windows `::`
+// is dual-stack and already owns 127.0.0.1, so the second listen fails with EADDRINUSE.
+// `exclusive` keeps SO_REUSEADDR off. macOS otherwise lets the new driver share the port.
+async function createOccupiedPort(): Promise<number> {
+  const anyInterface = createServer();
+  anyInterface.listen({ port: 0, exclusive: true });
+  await once(anyInterface, 'listening');
+  const { port } = anyInterface.address() as AddressInfo;
+  const loopback = createServer();
+  // `events.once(listening)` rejects on `error`, so it cannot race the EADDRINUSE case.
+  const heldLoopback = await new Promise<boolean>((resolve, reject) => {
+    loopback.once('listening', () => resolve(true));
+    loopback.once('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EADDRINUSE') {
+        resolve(false);
+        return;
+      }
+      reject(error);
+    });
+    loopback.listen({ port, host: '127.0.0.1', exclusive: true });
+  });
+  onTestFinished(() => {
+    anyInterface.close();
+    if (heldLoopback) {
+      loopback.close();
+    }
+  });
+  return port;
 }
 
 function createExternalBrowserConnection(
@@ -175,6 +226,39 @@ describe('EXTERNALBROWSER authentication', () => {
           expect(data.TOKEN).toBe(token);
           expect(data.PROOF_KEY).toBe('mock_proof_key_abc123');
           expect(data.LOGIN_NAME).toBe('test_user');
+        });
+
+        it('should login with the callback listener on browserRedirectPort', async () => {
+          // Given A free local port
+          const port = await findAvailablePort();
+
+          // And Wiremock returns valid ssoUrl and proofKey, and login succeeds
+          await wiremock.stubFromFile('auth/external_browser_authenticator_request.json');
+          await wiremock.stubFromFile('auth/login_success_external_browser.json');
+          await wiremock.stub(logoutSuccess());
+
+          const connection = createWiremockExternalBrowserConnection(wiremock, {
+            browserRedirectPort: port,
+            openExternalBrowserCallback: () => {
+              deliverBrowserCallbackAfter(wiremock, 'browser_sso_token_12345', 0);
+            },
+          });
+
+          // When Trying to Connect
+          await connection.connectAsync();
+          destroyConnectionAfterTest(connection);
+
+          // Then Login is successful
+          expect(connection.isUp()).toBe(true);
+
+          // And authenticator-request sends the configured port
+          const [authenticatorRequest] = await wiremock.findRequests(
+            '/session/authenticator-request.*',
+          );
+          const { data } = JSON.parse(authenticatorRequest.body) as {
+            data: { BROWSER_MODE_REDIRECT_PORT: string };
+          };
+          expect(data.BROWSER_MODE_REDIRECT_PORT).toBe(String(port));
         });
 
         it('should fail with timeout when no browser callback arrives', async () => {
@@ -473,6 +557,33 @@ describe('EXTERNALBROWSER authentication', () => {
         isRunningNewDriverWithBD('BD#61') ? TERMINATED_QUERY : NEVER_ESTABLISHED_QUERY,
       );
     });
+  });
+
+  it('should report the occupied browserRedirectPort', async () => {
+    const port = await createOccupiedPort();
+    const connection = snowflake.createConnection({
+      account: 'test_account',
+      username: 'test_user',
+      authenticator: 'EXTERNALBROWSER',
+      clientStoreTemporaryCredential: false,
+      browserRedirectPort: port,
+    });
+
+    if (isRunningNewDriverWithBD('BD#136')) {
+      const portInUseOsErrorMessage =
+        process.platform === 'win32'
+          ? 'Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)'
+          : `Address already in use (os error ${process.platform === 'darwin' ? 48 : 98})`;
+      await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject({
+        name: 'Error',
+        message: `Failed to login: External browser SSO failed: Failed to bind local listener on 127.0.0.1:${port}: ${portInUseOsErrorMessage}`,
+      });
+    } else {
+      await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject({
+        name: 'Error',
+        message: `Error while creating local server on port ${port}: Error: listen EADDRINUSE: address already in use :::${port}`,
+      });
+    }
   });
 
   it('should reject disableConsoleLogin as unknown on the new driver and accept it on the old driver', () => {

@@ -43,6 +43,8 @@ const CONNECTION_OPTION_ALIASES: Record<string, string> = {
   retryTimeout: 'retryTimeout',
   // Core's Node.js alias resolves this spelling to authentication_timeout (BD#59).
   browserActionTimeout: 'browserActionTimeout',
+  // Local EXTERNALBROWSER callback port. Core key `browser_redirect_port`.
+  browserRedirectPort: 'browser_redirect_port',
   // Core's Node.js alias resolves this spelling to retry_timeout (BD#122).
   timeout: 'timeout',
   useEnvProxy: 'use_proxy_env',

@@ -150,6 +150,9 @@ pub mod param_names {
     pub const PUT_COMPRESS_LEVEL: ParamKey = ParamKey("put_compress_level");
     pub const PUT_TEMPDIR: ParamKey = ParamKey("put_tempdir");
     pub const AUTHENTICATION_TIMEOUT: ParamKey = ParamKey("authentication_timeout");
+    /// Local `EXTERNALBROWSER` callback port. `0` and omitted both bind an
+    /// ephemeral port. Node-only: other wrappers have no equivalent option.
+    pub const BROWSER_REDIRECT_PORT: ParamKey = ParamKey("browser_redirect_port");
     pub const OKTA_USERNAME: ParamKey = ParamKey("okta_username");
     pub const DISABLE_SAML_URL_CHECK: ParamKey = ParamKey("disable_saml_url_check");
     pub const DISABLE_PARALLEL_USER_PROMPT: ParamKey = ParamKey("disable_parallel_user_prompt");
@@ -1273,6 +1276,18 @@ static PARAM_DEFS: &[ParamDef] = &[
         .description("Timeout in seconds for native Okta SSO authentication")
         .scopes(&[ParamScope::Connection])
         .mutable_after_connect(false)
+        .build(),
+    ParamDef::builder()
+        .canonical_name(param_names::BROWSER_REDIRECT_PORT.as_str())
+        .value_type(ValueType::Int)
+        .sensitive(false)
+        .auth(true)
+        .description(
+            "Local callback port for EXTERNALBROWSER login. 0 or omitted binds an ephemeral port on 127.0.0.1",
+        )
+        .scopes(&[ParamScope::Connection])
+        .mutable_after_connect(false)
+        .visible_to(visible_to!(NodeJs))
         .build(),
     ParamDef::builder()
         .canonical_name(param_names::OKTA_USERNAME.as_str())

@@ -863,6 +863,7 @@ pub async fn auth_request_data(
             username,
             authentication_timeout_secs,
             client_store_temporary_credential,
+            browser_redirect_port,
         } => {
             data.login_name = Some(username.clone());
             data.authenticator = Some(authenticator::EXTERNAL_BROWSER.to_string());
@@ -906,6 +907,7 @@ pub async fn auth_request_data(
                     login_parameters,
                     username,
                     *authentication_timeout_secs,
+                    *browser_redirect_port,
                     opener,
                     retry_policy,
                 )
@@ -3509,6 +3511,7 @@ mod tests {
             username: "testuser".to_string(),
             authentication_timeout_secs: 120,
             client_store_temporary_credential: true,
+            browser_redirect_port: 0,
         };
         assert!(is_reauthentication_required(
             ID_TOKEN_INVALID_LOGIN_REQUEST,
@@ -3533,6 +3536,7 @@ mod tests {
             username: "testuser".to_string(),
             authentication_timeout_secs: 120,
             client_store_temporary_credential: true,
+            browser_redirect_port: 0,
         };
         assert!(!is_reauthentication_required(390100, &browser));
     }

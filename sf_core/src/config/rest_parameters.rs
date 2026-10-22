@@ -687,6 +687,8 @@ pub enum LoginMethod {
         username: String,
         authentication_timeout_secs: u64,
         client_store_temporary_credential: bool,
+        /// `0` binds an ephemeral port. Any other value is the local port.
+        browser_redirect_port: u16,
     },
     /// Pre-acquired OAuth access token (legacy `AUTHENTICATOR=OAUTH` with
     /// raw `token=`). The driver forwards the token to Snowflake unchanged.
@@ -711,6 +713,22 @@ pub enum LoginMethod {
     /// from the cloud provider's metadata service, then presents it to GS
     /// under `AUTHENTICATOR=WORKLOAD_IDENTITY`.
     WorkloadIdentity(WorkloadIdentityConfig),
+}
+
+/// Missing key is `0` (ephemeral). A present value must fit in a TCP port.
+pub(crate) fn parse_browser_redirect_port(settings: &dyn Settings) -> Result<u16, ConfigError> {
+    let key = param_names::BROWSER_REDIRECT_PORT.as_str();
+    let Some(value) = settings.get(key) else {
+        return Ok(0);
+    };
+    settings
+        .get_u64(key)
+        .and_then(|port| u16::try_from(port).ok())
+        .context(InvalidParameterValueSnafu {
+            parameter: key,
+            value: value.to_wire_string(),
+            explanation: "must be a TCP port from 0 to 65535",
+        })
 }
 
 pub(crate) fn non_empty_string(settings: &dyn Settings, key: &str) -> Option<String> {
@@ -1109,6 +1127,7 @@ impl LoginMethod {
                     authentication_timeout_secs,
                     client_store_temporary_credential: settings
                         .get_bool_or("client_store_temporary_credential", true),
+                    browser_redirect_port: parse_browser_redirect_port(settings)?,
                 })
             }
             "WORKLOAD_IDENTITY" => Ok(Self::WorkloadIdentity(
@@ -1129,6 +1148,7 @@ mod tests {
     use super::*;
     use crate::config::settings::Setting;
     use std::collections::HashMap;
+    use test_case::test_case;
 
     fn create_test_settings(options: Vec<(&str, Setting)>) -> HashMap<String, Setting> {
         options
@@ -2327,6 +2347,7 @@ mod tests {
                 username,
                 authentication_timeout_secs,
                 client_store_temporary_credential,
+                ..
             } => (
                 username,
                 authentication_timeout_secs,
@@ -2342,6 +2363,32 @@ mod tests {
         assert_eq!(user, "browser_user");
         assert_eq!(timeout, DEFAULT_AUTHENTICATION_TIMEOUT_SECS);
         assert!(store_cred);
+    }
+
+    #[test_case(65536 ; "above u16")]
+    #[test_case(-1 ; "negative")]
+    fn test_external_browser_redirect_port_parsing(port: i64) {
+        let err = LoginMethod::from_settings(&create_test_settings(vec![
+            ("user", Setting::String("browser_user".to_string())),
+            (
+                "host",
+                Setting::String("account.snowflakecomputing.com".to_string()),
+            ),
+            ("account", Setting::String("account".to_string())),
+            (
+                "authenticator",
+                Setting::String("EXTERNALBROWSER".to_string()),
+            ),
+            ("browser_redirect_port", Setting::Int(port)),
+        ]))
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("browser_redirect_port")
+                && err
+                    .to_string()
+                    .contains("must be a TCP port from 0 to 65535"),
+            "{err}"
+        );
     }
 
     #[test]

@@ -247,6 +247,16 @@ export type ConnectionOptions = Record<string, unknown> & {
    */
   browserActionTimeout?: number;
   /**
+   * When authenticator=EXTERNALBROWSER, the port of the local server that
+   * receives the authentication callback. The listener binds `127.0.0.1`.
+   * `0` or omitted lets the OS pick a random available port. The bound port
+   * is sent as `BROWSER_MODE_REDIRECT_PORT`. This does not change the callback
+   * host or path, and it is not `oauthRedirectUri`.
+   *
+   * @default 0 (random available port)
+   */
+  browserRedirectPort?: number;
+  /**
    * Proxy URL (`[scheme://][user:pass@]host[:port]`). `proxyHost`, `proxyPort`,
    * `proxyProtocol`, `proxyUser`, and `proxyPassword` override matching URL
    * components when both are set.

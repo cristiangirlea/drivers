@@ -244,6 +244,9 @@ Each of these depends on the corresponding auth provider landing in `sf_core` + 
 - `integration/wiremock/testExternalBrowserSsoUrlError.ts` — runnable case replaced by the
   comment in that file pointing at `nodejs/tests/e2e/authentication/external-browser.test.ts`
   (`should fail when authenticator-request reports SSO URL generation failure`).
+- `integration/wiremock/testExternalBrowser.ts` — TODO: migrate `successfully logs in with custom
+  browserResponseRenderer` when `browserResponseRenderer` is implemented. The same test also
+  honestly covers fixed `browserRedirectPort` behavior by sending the callback to that port.
 - `integration/wiremock/testPoolAuthCoordination.ts` — migrate once all auth providers **and** the
   connection pool are implemented in the new driver.
 

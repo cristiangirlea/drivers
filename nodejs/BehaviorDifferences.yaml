@@ -2566,3 +2566,22 @@ behavior_differences:
       The new driver uses the 60-second connect default of the old JDBC and Python
       drivers. A connect that takes longer than 60 seconds fails here; the old driver
       waits up to its request timeout.
+
+  136:
+    name: 'An occupied browserRedirectPort reports the port and the OS error'
+    status: allowed
+    type: enhancement
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      server.listen(browserRedirectPort) binds '::'. A taken port fails with
+      Error, code undefined, and message "Error while creating local server on
+      port <port>: Error: listen EADDRINUSE: address already in use :::<port>".
+    new_driver_behavior: |
+      The listener binds 127.0.0.1. A taken port fails with Error, code undefined,
+      and message "Failed to login: External browser SSO failed: Failed to bind
+      local listener on 127.0.0.1:<port>: <os detail>". macOS detail is "Address
+      already in use (os error 48)". Linux detail is "Address already in use
+      (os error 98)". Windows detail is "Only one usage of each socket address
+      (protocol/network address/port) is normally permitted. (os error 10048)".

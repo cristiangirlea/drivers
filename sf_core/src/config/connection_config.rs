@@ -14,7 +14,7 @@ use crate::config::param_names::*;
 use crate::config::rest_parameters::{
     BrowserOpenFn, ClientInfo, DEFAULT_AUTHENTICATION_TIMEOUT_SECS, LoginMethod, LoginParameters,
     NativeOktaConfig, OAuthAuthorizationCodeConfig, OAuthClientCredentialsConfig, OAuthFlowOptions,
-    WifProvider, WorkloadIdentityConfig, require_http_header_value,
+    WifProvider, WorkloadIdentityConfig, parse_browser_redirect_port, require_http_header_value,
 };
 use crate::config::settings::Settings;
 use crate::config::{
@@ -97,6 +97,8 @@ pub enum AuthConfig {
         user: String,
         authentication_timeout_secs: u64,
         client_store_temporary_credential: bool,
+        /// `0` binds an ephemeral port. Any other value is the local port.
+        browser_redirect_port: u16,
     },
     /// Legacy pre-acquired OAuth access token (`AUTHENTICATOR=OAUTH` +
     /// raw `token=`). Forwarded unchanged to Snowflake
@@ -400,6 +402,7 @@ fn build_auth_config(settings: &ParamStore) -> Result<AuthConfig, ConfigError> {
             client_store_temporary_credential: settings
                 .get_bool(CLIENT_STORE_TEMPORARY_CREDENTIAL)
                 .unwrap_or(true),
+            browser_redirect_port: parse_browser_redirect_port(settings)?,
         }),
         "WORKLOAD_IDENTITY" => Ok(AuthConfig::WorkloadIdentity(
             WorkloadIdentityConfig::from_settings(settings)?,
@@ -541,10 +544,12 @@ fn login_method_from_auth_config(auth: &AuthConfig) -> LoginMethod {
             user,
             authentication_timeout_secs,
             client_store_temporary_credential,
+            browser_redirect_port,
         } => LoginMethod::ExternalBrowser {
             username: user.clone(),
             authentication_timeout_secs: *authentication_timeout_secs,
             client_store_temporary_credential: *client_store_temporary_credential,
+            browser_redirect_port: *browser_redirect_port,
         },
         AuthConfig::OAuthAccessToken { user, token } => LoginMethod::OAuthAccessToken {
             username: user.clone(),
