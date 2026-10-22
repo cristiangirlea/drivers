@@ -199,7 +199,19 @@ jobs:
             exit 1
           fi
 
+      - name: Cache cbindgen binary
+        id: cbindgen-cache
+        # Cache failures never fail the job — fall back to cargo install.
+        # The cargo-cache action stores the registry and workspace target/,
+        # not the binary cargo install writes to ~/.cargo/bin.
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/cbindgen
+          key: cbindgen-0.29.2-${{ runner.os }}-${{ runner.arch }}
+
       - name: Install cbindgen
+        if: steps.cbindgen-cache.outputs.cache-hit != 'true'
         run: cargo install cbindgen --version 0.29.2 --locked
 
       - name: Verify sf_core_providers.h is up to date
