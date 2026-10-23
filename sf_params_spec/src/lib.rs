@@ -384,6 +384,8 @@ pub const DEFAULT_QUERY_TIMEOUT_SECS: u64 = 0;
 /// Default `request_timeout` in seconds for non-login, non-query operations.
 pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 120;
 
+pub const DEFAULT_RETRY_TIMEOUT_SECS: u64 = 300;
+
 /// Common exponential-backoff defaults shared by the HTTP and PUT/GET retry
 /// pipelines. These are the single source of truth: both the `ParamDef`
 /// defaults below and `RetryPolicy`'s backoff construction in
@@ -2005,7 +2007,7 @@ static PARAM_DEFS: &[ParamDef] = &[
         .value_type(ValueType::Int)
         .sensitive(false)
         .auth(false)
-        .description("Per-request timeout in seconds for a single HTTP attempt within a retry loop (0 or absent = no per-request timeout)")
+        .description("Per-request timeout in seconds for a single HTTP attempt within a retry loop (0 = no timeout, absent = 300)")
         .scopes(&[ParamScope::Connection])
         .mutable_after_connect(false)
         .build(),

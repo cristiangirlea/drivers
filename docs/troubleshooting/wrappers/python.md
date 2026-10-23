@@ -116,7 +116,7 @@ there is no single master timeout. All the "wall-clock" ones include retry time
 | `request_timeout` | 120 s | All other operations (session close, heartbeat, …), including retries |
 | `authentication_timeout` | 120 s | The interactive auth step (e.g. external-browser wait) |
 | `connect_timeout` | 60 s | Connect phase only: name lookup, TCP, and TLS (per HTTP connection) |
-| `retry_timeout` | none | Overall retry budget (see [query-execution.md](../core/query-execution.md#retries--503s)) |
+| `retry_timeout` | 300 s | Per HTTP attempt, wall-clock from start to body finish (0 = no timeout) |
 
 So a query that "ignores" a short `login_timeout` is working as designed — set
 `query_timeout` for query duration. A hang during external-browser login is bounded

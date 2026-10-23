@@ -2585,3 +2585,23 @@ behavior_differences:
       already in use (os error 48)". Linux detail is "Address already in use
       (os error 98)". Windows detail is "Only one usage of each socket address
       (protocol/network address/port) is normally permitted. (os error 10048)".
+
+  137:
+    name: 'HTTP attempts time out after 300 seconds by default'
+    status: unknown
+    type: enhancement
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      Each HTTP request uses axios timeout (default 360000 ms, or the timeout option)
+      as an idle socket timer covering the whole request.
+    new_driver_behavior: |
+      retry_timeout defaults to 300 seconds and bounds each HTTP attempt from start
+      until the response body finishes. 0 removes the per-attempt limit. Result chunk
+      downloads do not use this policy.
+    description: |
+      The new driver applies a 300-second wall-clock cap per HTTP attempt, matching
+      the old JDBC socket default. A request that stays active longer than 300 seconds
+      fails here; the old driver waited up to its 360-second request timeout. The Node
+      timeout option still maps to retry_timeout.

@@ -322,9 +322,7 @@ class ConnectionConfig(ConnectionConfigMixin):
     """Maximum total attempts for general HTTP calls (login, query, logout). 1 = no retry. Default: 6"""
 
     retry_timeout: int | None = None
-    """Per-request timeout in seconds for a single HTTP attempt within a retry loop (0 or absent = no per-request
-    timeout)
-    """
+    """Per-request timeout in seconds for a single HTTP attempt within a retry loop (0 = no timeout, absent = 300)"""
 
     secondary_roles: str | None = None
     """Secondary-roles activation mode sent at login (e.g. ALL or NONE)"""

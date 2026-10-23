@@ -2,7 +2,8 @@ use super::logout::LogoutConfig;
 use super::param_registry::{
     DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_LOGIN_TIMEOUT_SECS, DEFAULT_PUT_GET_MAX_ATTEMPTS,
     DEFAULT_QUERY_TIMEOUT_SECS, DEFAULT_RETRY_BACKOFF_BASE_MS, DEFAULT_RETRY_BACKOFF_CAP_MS,
-    DEFAULT_RETRY_BACKOFF_FACTOR, DEFAULT_RETRY_MAX_ATTEMPTS, param_names,
+    DEFAULT_RETRY_BACKOFF_FACTOR, DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_TIMEOUT_SECS,
+    param_names,
 };
 use super::param_store::ParamStore;
 use std::collections::BTreeSet;
@@ -182,7 +183,10 @@ impl RetryPolicy {
             max_attempts,
             backoff: backoff_from_params(params),
             max_elapsed,
-            per_request_timeout: read_optional_duration_secs(params, param_names::RETRY_TIMEOUT),
+            per_request_timeout: match params.get_int(param_names::RETRY_TIMEOUT) {
+                None => Some(Duration::from_secs(DEFAULT_RETRY_TIMEOUT_SECS)),
+                Some(_) => read_optional_duration_secs(params, param_names::RETRY_TIMEOUT),
+            },
             extra_retryable_statuses: parse_extra_statuses(params),
             ..Self::default()
         }
@@ -571,6 +575,12 @@ mod tests {
         let store = params(&[(param_names::RETRY_TIMEOUT.as_str(), Setting::Int(0))]);
         let policy = RetryPolicy::http(&store);
         assert_eq!(policy.per_request_timeout, None);
+
+        let policy = RetryPolicy::http(&ParamStore::new());
+        assert_eq!(
+            policy.per_request_timeout,
+            Some(Duration::from_secs(DEFAULT_RETRY_TIMEOUT_SECS))
+        );
     }
 
     #[test]

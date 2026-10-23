@@ -1375,3 +1375,23 @@ behavior_differences:
       would make some S3 clients do the same. The common GCS presigned path of the
       old driver already stores a blank encoding. COPY and driver GET use the
       compression registered with the file.
+
+  77:
+    name: "HTTP attempts use a 300-second wall-clock timeout instead of socket inactivity"
+    status: unknown
+    type: enhancement
+    reviewed: false
+    is_breaking_change: true
+    impact: low
+    old_driver_behavior: |
+      HTTP_CLIENT_SOCKET_TIMEOUT (default 300000 ms) is Apache HttpClient SO_TIMEOUT:
+      the gap between consecutive packets. A slow but active download can run longer
+      than 300 seconds.
+    new_driver_behavior: |
+      retry_timeout defaults to 300 seconds and bounds each HTTP attempt from start
+      until the response body finishes. 0 removes the per-attempt limit. Result chunk
+      downloads do not use this policy.
+    description: |
+      The default duration matches the old JDBC socket timeout. The new timer does not
+      reset when bytes arrive, so a healthy download slower than size/300 throughput
+      can fail here.

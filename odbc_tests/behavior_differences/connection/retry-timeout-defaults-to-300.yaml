@@ -1,0 +1,20 @@
+name: "HTTP attempts time out after 300 seconds by default"
+status: unknown
+type: enhancement
+reviewed: false
+is_breaking_change: true
+impact: low
+old_driver_behavior: |
+  Each HTTP attempt uses CURLOPT_TIMEOUT as a whole-request wall-clock limit:
+  300 seconds during login, and about 135 seconds afterwards (90 plus the 45-second
+  health-check interval).
+new_driver_behavior: |
+  retry_timeout defaults to 300 seconds and bounds each HTTP attempt from start
+  until the response body finishes. Login still also has LOGIN_TIMEOUT (default 300
+  seconds) across retries. 0 removes the per-attempt limit. Result chunk downloads
+  do not use this policy.
+description: |
+  After login, a single HTTP attempt that takes longer than 135 seconds fails on
+  the old driver and succeeds here until 300 seconds. During login both drivers
+  allow 300 seconds per attempt, with the old driver's remaining login budget able
+  to cut that shorter.
