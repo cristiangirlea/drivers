@@ -98,6 +98,7 @@ import net.snowflake.client.internal.unicore.protobuf_gen.DatabaseDriverV1.Wrapp
 import net.snowflake.client.internal.unicore.protobuf_gen.DatabaseDriverV1.WrapperIdentity.Builder;
 import net.snowflake.client.internal.util.DelegatingWrapper;
 import net.snowflake.client.internal.util.NotImplementedException;
+import net.snowflake.client.internal.util.StageRefQuoting;
 
 @JdbcBoundary
 public class SnowflakeConnectionImpl implements InternalSnowflakeConnection, DelegatingWrapper {
@@ -837,7 +838,10 @@ public class SnowflakeConnectionImpl implements InternalSnowflakeConnection, Del
    * stage reference with {@code destPrefix} appended (so the file lands at {@code
    * <stage>/<prefix>/<destFile>}). The local file URI carries only the destination filename — its
    * basename is what GS uses to identify the stage object. {@code OVERWRITE = TRUE} mirrors the
-   * reference JDBC contract that uploadStream always overwrites.
+   * reference JDBC contract that uploadStream always overwrites. The assembled stage reference is
+   * single-quoted when {@link StageRefQuoting#quoteIfNeeded(String)} requires it. When {@code
+   * destPrefix} is set, {@link StageRefQuoting#unwrapOuterQuotes(String)} removes an outer
+   * single-quote or dollar-quote wrapper before the prefix is appended.
    *
    * <p>{@code compressData} maps to the server-side {@code AUTO_COMPRESS} clause rather than JDBC's
    * historical client-side gzip: when true (default) the clause is omitted so GS auto-compresses
@@ -848,14 +852,19 @@ public class SnowflakeConnectionImpl implements InternalSnowflakeConnection, Del
       String stageName, String destFileName, String destPrefix, boolean compressData) {
     String stagePath = stageName;
     if (destPrefix != null && !destPrefix.isEmpty()) {
-      String trimmed = stagePath.endsWith("/") ? stagePath : stagePath + "/";
+      String stage = StageRefQuoting.unwrapOuterQuotes(stageName);
+      String trimmed = stage.endsWith("/") ? stage : stage + "/";
       stagePath = trimmed + destPrefix;
     }
     StringBuilder sql = new StringBuilder();
     // PUT syntax does not support IDENTIFIER(?) or ? bindings for stage paths or file
-    // URIs; destFileName and stageName are caller-controlled values passed directly by
-    // the JDBC user.
-    sql.append("PUT 'file:///").append(destFileName).append("' ").append(stagePath);
+    // URIs. destFileName and stageName are caller-controlled. quoteIfNeeded single-quotes
+    // a stage reference that contains a character outside the unquoted set and doubles
+    // embedded single quotes.
+    sql.append("PUT 'file:///")
+        .append(destFileName)
+        .append("' ")
+        .append(StageRefQuoting.quoteIfNeeded(stagePath));
     if (!compressData) {
       sql.append(" AUTO_COMPRESS = FALSE");
     }

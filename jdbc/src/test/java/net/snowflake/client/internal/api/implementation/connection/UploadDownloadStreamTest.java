@@ -166,6 +166,70 @@ class UploadDownloadStreamTest {
     assertEquals("PUT 'file:///data.csv' @my_stage OVERWRITE = TRUE", sql);
   }
 
+  @Test
+  void shouldQuoteNonAsciiStageRefInPutSql() {
+    String sql =
+        SnowflakeConnectionImpl.buildPutSql("@\"DB\".\"日本語\".STAGE", "data.csv", null, true);
+    assertEquals("PUT 'file:///data.csv' '@\"DB\".\"日本語\".STAGE' OVERWRITE = TRUE", sql);
+  }
+
+  @Test
+  void shouldQuoteStageRefContainingSpaceInPutSql() {
+    String sql =
+        SnowflakeConnectionImpl.buildPutSql("@\"my stage\"/path/file.csv", "data.csv", null, true);
+    assertEquals("PUT 'file:///data.csv' '@\"my stage\"/path/file.csv' OVERWRITE = TRUE", sql);
+  }
+
+  @Test
+  void shouldDoubleEmbeddedSingleQuoteInPutSql() {
+    String sql = SnowflakeConnectionImpl.buildPutSql("@stage_O'Brien", "data.csv", null, true);
+    assertEquals("PUT 'file:///data.csv' '@stage_O''Brien' OVERWRITE = TRUE", sql);
+  }
+
+  @Test
+  void shouldLeaveAlreadyQuotedStageRefUnchangedInPutSql() {
+    String sql =
+        SnowflakeConnectionImpl.buildPutSql("'@\"DB\".\"日本語\".STAGE'", "data.csv", null, true);
+    assertEquals("PUT 'file:///data.csv' '@\"DB\".\"日本語\".STAGE' OVERWRITE = TRUE", sql);
+
+    sql = SnowflakeConnectionImpl.buildPutSql("$$@\"DB\".\"日本語\".STAGE$$", "data.csv", null, true);
+    assertEquals("PUT 'file:///data.csv' $$@\"DB\".\"日本語\".STAGE$$ OVERWRITE = TRUE", sql);
+  }
+
+  @Test
+  void shouldAppendPrefixInsideUnwrappedSingleQuotes() {
+    String sql =
+        SnowflakeConnectionImpl.buildPutSql("'@\"DB\".\"日本語\".STAGE'", "data.csv", "subdir", true);
+    assertEquals("PUT 'file:///data.csv' '@\"DB\".\"日本語\".STAGE/subdir' OVERWRITE = TRUE", sql);
+  }
+
+  @Test
+  void shouldAppendPrefixInsideUnwrappedDollarQuotes() {
+    String sql =
+        SnowflakeConnectionImpl.buildPutSql(
+            "$$@\"DB\".\"日本語\".STAGE$$", "data.csv", "subdir", true);
+    assertEquals("PUT 'file:///data.csv' '@\"DB\".\"日本語\".STAGE/subdir' OVERWRITE = TRUE", sql);
+  }
+
+  @Test
+  void shouldAppendPrefixToUnwrappedAsciiStageRefWithoutQuoting() {
+    String sql = SnowflakeConnectionImpl.buildPutSql("'@my_stage'", "data.csv", "subdir", true);
+    assertEquals("PUT 'file:///data.csv' @my_stage/subdir OVERWRITE = TRUE", sql);
+  }
+
+  @Test
+  void shouldAppendPrefixAfterUnescapingDoubledSingleQuote() {
+    String sql =
+        SnowflakeConnectionImpl.buildPutSql("'@stage_O''Brien'", "data.csv", "subdir", true);
+    assertEquals("PUT 'file:///data.csv' '@stage_O''Brien/subdir' OVERWRITE = TRUE", sql);
+  }
+
+  @Test
+  void shouldAvoidDoubleSlashWhenQuotedStageHasTrailingSlash() {
+    String sql = SnowflakeConnectionImpl.buildPutSql("'@my_stage/'", "data.csv", "subdir", true);
+    assertEquals("PUT 'file:///data.csv' @my_stage/subdir OVERWRITE = TRUE", sql);
+  }
+
   // ---------------------------------------------------------------------------
   // uploadStream — wiring: Begin -> Chunk* -> Finish (or Abort on read failure)
   // ---------------------------------------------------------------------------
