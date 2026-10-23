@@ -1,10 +1,9 @@
 name: Test Python release with Snowflake CLI
 
 on:
-  # Release-branch pushes do not trigger this workflow.
-  # push:
-  #   branches:
-  #     - 'release/python-v*'
+  push:
+    branches:
+      - 'release/python-v*'
   workflow_dispatch:
     inputs:
       ud-branch:
