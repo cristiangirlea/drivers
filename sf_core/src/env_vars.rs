@@ -105,6 +105,18 @@ pub const AZURE_FEDERATED_TOKEN_FILE: &str = "AZURE_FEDERATED_TOKEN_FILE";
 /// additive: they extend the recognized-host list and cannot disable it.
 pub const SNOWFLAKE_WIF_ALLOWED_HOST_SUFFIXES: &str = "SNOWFLAKE_WIF_ALLOWED_HOST_SUFFIXES";
 
+/// Colon-separated TLS cipher allow-list for every client this process builds.
+///
+/// Read only from the process environment, never from the DSN or connection
+/// parameters. A name that starts with `TLS_` selects a TLS 1.3 suite
+/// (`TLS_AES_128_GCM_SHA256`). Any other name selects a TLS 1.2 suite
+/// (`ECDHE-RSA-AES256-GCM-SHA384`). Names for one version do not change the
+/// suites of the other. Empty or whitespace is the same as unset. An
+/// unrecognized name, a suite this build does not offer, or an enabled
+/// protocol version left with no suite makes the connection fail with an
+/// error. The process keeps running.
+pub const SNOWFLAKE_TLS_CIPHERS: &str = "SNOWFLAKE_TLS_CIPHERS";
+
 /// Operator/CI override read only from the process environment, never from the
 /// DSN, connection parameters, or the server. When set to `true` or `1`, GCS
 /// object URLs use the virtual-host style (`{bucket}.storage.googleapis.com`)

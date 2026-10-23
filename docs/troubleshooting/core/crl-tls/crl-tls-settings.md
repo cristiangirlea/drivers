@@ -5,8 +5,8 @@ each can be set (connection param, `connections.toml`, `sf.odbc.ini`, env var) a
 precedence, see the Runbook
 [§4 Configurations supported](../../../troubleshooting-runbook.md#4-configurations-supported).
 
-Sources: `sf_core/src/tls/config.rs`, `sf_core/src/crl/config.rs`,
-`sf_core/src/config/connection_config.rs`.
+Sources: `sf_core/src/tls/config.rs`, `sf_core/src/tls/cipher_policy.rs`,
+`sf_core/src/crl/config.rs`, `sf_core/src/config/connection_config.rs`.
 
 Related: [tls-handshake.md](tls-handshake.md) · [cert-chain.md](cert-chain.md) · [proxy-tls.md](proxy-tls.md) · [crl-revocation.md](crl-revocation.md) · up to [CRL/TLS index](../crl-tls.md)
 
@@ -22,6 +22,25 @@ Related: [tls-handshake.md](tls-handshake.md) · [cert-chain.md](cert-chain.md) 
 | `extra_root_store_path` | path | — | PEM bundle added to the system roots |
 | `min_tls_version` | string | `tls12` | Lowest protocol version to offer (`tls12` / `tls13`) |
 | `max_tls_version` | string | `tls13` | Highest protocol version to offer; must be ≥ `min_tls_version` |
+
+### `SNOWFLAKE_TLS_CIPHERS`
+
+Process environment variable, not a connection parameter. It applies to every
+TLS client in the process: login, queries, result chunks, stage transfers,
+in-band telemetry, and login-time cloud calls, including clients built with
+`verify_certificates=false`. The value is a colon-separated list. A name that
+starts with `TLS_` (for example `TLS_AES_256_GCM_SHA384`) selects a TLS 1.3
+suite; any other name (for example `ECDHE-RSA-AES256-GCM-SHA384`) selects a
+TLS 1.2 suite. Names for one version do not change the suites of the other:
+a TLS 1.3-only list leaves the TLS 1.2 suites at their defaults, and a TLS
+1.2-only list leaves the TLS 1.3 suites at their defaults. Empty or whitespace
+is the same as unset. An unrecognized name, a name this build does not offer,
+or an enabled version left with no suite makes the connection fail with an
+error.
+
+Limiting a connection to the two AES-GCM TLS 1.3 suites takes both
+`min_tls_version=tls13` and
+`SNOWFLAKE_TLS_CIPHERS=TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384`.
 
 ## CRL
 

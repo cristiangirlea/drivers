@@ -226,6 +226,112 @@ fn telemetry_rpcs_accept_unknown_handles_silently() {
         .expect("telemetry_send_wrapper_error on unknown handle must not error");
 }
 
+#[test]
+fn sql_driver_connect_reports_an_unrecognized_tls_cipher() {
+    use odbc_sys as sql;
+    use sf_core::utils::sync::MutexRecoverExt;
+    use sfodbc::c_api::{SQLAllocHandle, SQLDriverConnect, SQLFreeHandle, SQLGetDiagRec};
+    use std::sync::{Mutex, MutexGuard};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct ResetEnv<'a> {
+        _lock: MutexGuard<'a, ()>,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for ResetEnv<'_> {
+        fn drop(&mut self) {
+            // SAFETY: `ENV_LOCK` is still held; field drop releases it after this.
+            match self.previous.take() {
+                Some(value) => unsafe {
+                    std::env::set_var(sf_core::env_vars::SNOWFLAKE_TLS_CIPHERS, value);
+                },
+                None => unsafe { std::env::remove_var(sf_core::env_vars::SNOWFLAKE_TLS_CIPHERS) },
+            }
+        }
+    }
+
+    let lock = ENV_LOCK.lock_recover();
+    let previous = std::env::var_os(sf_core::env_vars::SNOWFLAKE_TLS_CIPHERS);
+    // SAFETY: `ENV_LOCK` is held for the connect below.
+    unsafe {
+        std::env::set_var(
+            sf_core::env_vars::SNOWFLAKE_TLS_CIPHERS,
+            "DHE-RSA-AES256-GCM-SHA384",
+        );
+    }
+    let guard = ResetEnv {
+        _lock: lock,
+        previous,
+    };
+
+    let mut env: sql::Handle = std::ptr::null_mut();
+    let rc = unsafe {
+        SQLAllocHandle(
+            sql::HandleType::Env,
+            std::ptr::null_mut(),
+            &mut env as *mut sql::Handle,
+        )
+    };
+    assert_eq!(rc, sql::SqlReturn::SUCCESS.0, "SQLAllocHandle(Env) failed");
+    let mut dbc: sql::Handle = std::ptr::null_mut();
+    let rc = unsafe { SQLAllocHandle(sql::HandleType::Dbc, env, &mut dbc as *mut sql::Handle) };
+    assert_eq!(rc, sql::SqlReturn::SUCCESS.0, "SQLAllocHandle(Dbc) failed");
+
+    let conn = b"ACCOUNT=testaccount;USER=testuser;PASSWORD=pw;HOST=127.0.0.1";
+    let mut out = [0u8; 8];
+    let mut out_len = 0;
+    let rc = unsafe {
+        SQLDriverConnect(
+            dbc,
+            std::ptr::null_mut(),
+            conn.as_ptr(),
+            conn.len() as sql::SmallInt,
+            out.as_mut_ptr(),
+            out.len() as sql::SmallInt,
+            &mut out_len,
+            0,
+        )
+    };
+    assert_ne!(rc, sql::SqlReturn::SUCCESS.0, "connect must fail closed");
+
+    let mut state = [0u8; 6];
+    let mut native = 0;
+    let mut message = [0u8; 1024];
+    let mut text_len = 0;
+    let diag = unsafe {
+        SQLGetDiagRec(
+            sql::HandleType::Dbc,
+            dbc,
+            1,
+            state.as_mut_ptr(),
+            &mut native,
+            message.as_mut_ptr(),
+            message.len() as sql::SmallInt,
+            &mut text_len,
+        )
+    };
+    assert_eq!(diag, sql::SqlReturn::SUCCESS.0, "SQLGetDiagRec failed");
+    let end = message
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(message.len());
+    let text = String::from_utf8_lossy(&message[..end]);
+    assert!(
+        text.contains("SNOWFLAKE_TLS_CIPHERS"),
+        "diagnostic should name the variable, got {text}"
+    );
+    assert!(
+        text.contains("DHE-RSA-AES256-GCM-SHA384"),
+        "diagnostic should name the rejected suite, got {text}"
+    );
+
+    unsafe { SQLFreeHandle(sql::HandleType::Dbc, dbc) };
+    unsafe { SQLFreeHandle(sql::HandleType::Env, env) };
+    drop(guard);
+}
+
 // End-to-end proxy DSN coverage lives in
 // `odbc_tests/tests/e2e/session/proxy.cpp`, which exercises the full SQL*
 // connect path through a wiremock forward proxy (see Jakub's review on PR

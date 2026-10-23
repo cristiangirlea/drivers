@@ -335,22 +335,21 @@ fn build_tls_client_and_rustls_config_sync(
         return crate::tls::error::InsecureTlsRejectedSnafu.fail();
     }
 
-    // Standard-build insecure clients still need reqwest's process default.
-    // Verified clients carry explicit configs in both builds; retaining the
-    // FIPS gate also preserves the existing global-provider startup policy.
+    // The global install covers any reqwest client that still has no
+    // preconfigured config. Verified and insecure clients both carry an
+    // explicit config, so SNOWFLAKE_TLS_CIPHERS applies to either.
     super::ensure_crypto_provider();
     super::require_fips_provider()?;
 
     #[cfg(not(feature = "fips"))]
     if !tls_config.verify_certificates {
         tracing::warn!("Creating insecure TLS client - certificate verification disabled");
-        let builder = apply_reqwest_tls_versions(
-            configure_http_client(Client::builder(), proxy)?,
-            tls_config,
-        );
-        let mut builder = builder
-            .danger_accept_invalid_certs(true)
-            .danger_accept_invalid_hostnames(true);
+        let rustls_cfg = build_insecure_traffic_rustls_config(
+            &tls_config.versions.enabled_rustls_versions(),
+            ClientAlpn::Default,
+        )?;
+        let mut builder =
+            configure_http_client(Client::builder(), proxy)?.use_preconfigured_tls(rustls_cfg);
         if let Some(ct) = connect_timeout {
             builder = builder.connect_timeout(ct);
         }
@@ -452,24 +451,6 @@ pub fn create_tls_client_with_proxy_and_timeouts(
     .map(|(c, _)| c)
 }
 
-#[cfg(not(feature = "fips"))]
-pub(crate) fn apply_reqwest_tls_versions(
-    builder: ClientBuilder,
-    tls_config: &TlsConfig,
-) -> ClientBuilder {
-    apply_reqwest_tls_versions_window(builder, tls_config.versions)
-}
-
-#[cfg(not(feature = "fips"))]
-pub(crate) fn apply_reqwest_tls_versions_window(
-    builder: ClientBuilder,
-    versions: crate::tls::config::TlsVersions,
-) -> ClientBuilder {
-    builder
-        .min_tls_version(versions.min.to_reqwest())
-        .max_tls_version(versions.max.to_reqwest())
-}
-
 /// Configure the AWS SDK transport and keep its HTTP/1.1-only ALPN preference
 /// in step with the HTTP version reqwest actually sends.
 pub(crate) fn configure_http1_tls_builder(
@@ -504,10 +485,11 @@ impl ClientAlpn {
     }
 }
 
-/// Shared reqwest TLS policy for HTTP/1.1 storage clients. Explicit provider,
-/// roots, versions, and ALPN must be set before `.use_preconfigured_tls`:
-/// reqwest ignores TLS options subsequently set on its builder.
-/// FIPS builds reject insecure configs; standard builds keep reqwest's verifier.
+/// Shared reqwest TLS policy for storage clients. Explicit provider, roots,
+/// versions, and ALPN must be set before `.use_preconfigured_tls`: reqwest
+/// ignores TLS options subsequently set on its builder. FIPS builds reject
+/// insecure configs. Standard builds accept any certificate and handshake
+/// signature, and apply `SNOWFLAKE_TLS_CIPHERS` on that config.
 fn configure_tls_builder(
     builder: ClientBuilder,
     tls_config: &TlsConfig,
@@ -521,17 +503,17 @@ fn configure_tls_builder(
         return crate::tls::error::InsecureTlsRejectedSnafu.fail();
     }
 
-    // Standard-build insecure builders resolve the global provider when built;
-    // verified clients use their explicit linked-module config.
     super::ensure_crypto_provider();
     super::require_fips_provider()?;
     let builder = apply_proxy_to_builder(builder, proxy)?;
     #[cfg(not(feature = "fips"))]
     if !tls_config.verify_certificates {
         tracing::warn!("Creating insecure TLS client - certificate verification disabled");
-        return Ok(apply_reqwest_tls_versions(builder, tls_config)
-            .danger_accept_invalid_certs(true)
-            .danger_accept_invalid_hostnames(true));
+        let rustls_cfg = build_insecure_traffic_rustls_config(
+            &tls_config.versions.enabled_rustls_versions(),
+            alpn,
+        )?;
+        return Ok(builder.use_preconfigured_tls(rustls_cfg));
     }
 
     let root_certificates = load_root_certificates(tls_config)?;
@@ -619,6 +601,12 @@ fn configure_storage_from_snapshot(
     .map(ClientBuilder::no_gzip)
 }
 
+fn handshake_provider(
+    protocol_versions: &[&'static rustls::SupportedProtocolVersion],
+) -> Result<Arc<rustls::crypto::CryptoProvider>, TlsError> {
+    super::cipher_policy::provider_for_versions(protocol_versions)
+}
+
 /// Build a rustls `ClientConfig` with CRL validation. Shared by
 /// [`configure_tls_builder`] (storage clients) and
 /// [`build_tls_client_and_rustls_config`] (connection-level client).
@@ -636,7 +624,7 @@ fn build_crl_rustls_config(
     }
     // Reject an empty version window instead of silently restoring rustls's
     // defaults, which could re-enable a protocol the caller excluded.
-    let provider = crate::tls::crypto_module::CryptoModule::get().provider();
+    let provider = handshake_provider(protocol_versions)?;
     let version_builder = ClientConfig::builder_with_provider(provider)
         .with_protocol_versions(protocol_versions)
         .context(RustlsConfigSnafu)?;
@@ -675,16 +663,15 @@ fn build_plain_rustls_client_config(
         RootCertificates::Custom(pem) => Arc::new(create_root_store_from_pem(pem)?),
         RootCertificates::Extra(pem) => roots.with_native_and_pem(pem)?,
     };
-    let provider = crate::tls::crypto_module::CryptoModule::get().provider();
-    let builder = if protocol_versions.is_empty() {
-        rustls::ClientConfig::builder_with_provider(provider)
-            .with_safe_default_protocol_versions()
-            .context(RustlsConfigSnafu)?
+    let versions = if protocol_versions.is_empty() {
+        rustls::DEFAULT_VERSIONS
     } else {
-        rustls::ClientConfig::builder_with_provider(provider)
-            .with_protocol_versions(protocol_versions)
-            .context(RustlsConfigSnafu)?
+        protocol_versions
     };
+    let provider = handshake_provider(versions)?;
+    let builder = rustls::ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(versions)
+        .context(RustlsConfigSnafu)?;
     Ok(builder
         .with_root_certificates(root_store)
         .with_no_client_auth())
@@ -729,7 +716,7 @@ fn build_verified_rustls_config(
     verify_hostname: bool,
     alpn: ClientAlpn,
 ) -> Result<rustls::ClientConfig, TlsError> {
-    let provider = crate::tls::crypto_module::CryptoModule::get().provider();
+    let provider = handshake_provider(protocol_versions)?;
     let supported_algs = provider.signature_verification_algorithms;
     // An empty version window can be constructed through TlsConfig's public
     // fields. Reqwest rejects it; silently using safe defaults would downgrade
@@ -805,6 +792,83 @@ impl rustls::client::danger::ServerCertVerifier for IgnoreHostnameCertVerifier {
 }
 
 #[cfg(not(feature = "fips"))]
+fn build_insecure_traffic_rustls_config(
+    protocol_versions: &[&'static rustls::SupportedProtocolVersion],
+    alpn: ClientAlpn,
+) -> Result<rustls::ClientConfig, TlsError> {
+    let provider = handshake_provider(protocol_versions)?;
+    let mut config = rustls::ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(protocol_versions)
+        .context(RustlsConfigSnafu)?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(AcceptAnyCert))
+        .with_no_client_auth();
+    config.alpn_protocols = alpn.protocols();
+    Ok(config)
+}
+
+#[cfg(not(feature = "fips"))]
+/// Accepts any certificate and any handshake signature.
+///
+/// This is the verifier on the traffic client when `verify_certificates` is
+/// false. [`NoVerifyCertVerifier`] still checks handshake signatures and stays
+/// on the diagnostic config.
+#[derive(Debug)]
+struct AcceptAnyCert;
+
+#[cfg(not(feature = "fips"))]
+impl rustls::client::danger::ServerCertVerifier for AcceptAnyCert {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        // reqwest's NoVerifier advertises this set today. A narrower list
+        // would reject a signature the insecure client currently accepts.
+        vec![
+            rustls::SignatureScheme::RSA_PKCS1_SHA1,
+            rustls::SignatureScheme::ECDSA_SHA1_Legacy,
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+            rustls::SignatureScheme::RSA_PKCS1_SHA384,
+            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
+            rustls::SignatureScheme::RSA_PKCS1_SHA512,
+            rustls::SignatureScheme::ECDSA_NISTP521_SHA512,
+            rustls::SignatureScheme::RSA_PSS_SHA256,
+            rustls::SignatureScheme::RSA_PSS_SHA384,
+            rustls::SignatureScheme::RSA_PSS_SHA512,
+            rustls::SignatureScheme::ED25519,
+            rustls::SignatureScheme::ED448,
+        ]
+    }
+}
+
+#[cfg(not(feature = "fips"))]
 /// rustls [`ClientConfig`] that skips all certificate verification.
 ///
 /// Returned by [`build_tls_client_and_rustls_config`] for the `verify_certificates=false`
@@ -814,7 +878,7 @@ impl rustls::client::danger::ServerCertVerifier for IgnoreHostnameCertVerifier {
 /// exactly the case where users reach for `verify_certificates=false`.
 pub(crate) fn build_insecure_rustls_config() -> Result<Arc<rustls::ClientConfig>, TlsError> {
     super::ensure_crypto_provider();
-    let provider = crate::tls::crypto_module::CryptoModule::get().provider();
+    let provider = handshake_provider(rustls::DEFAULT_VERSIONS)?;
     Ok(Arc::new(
         rustls::ClientConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()
@@ -1154,6 +1218,86 @@ mod tests {
             ),
             "version-restricted config should still use the crypto module's provider"
         );
+    }
+
+    #[test]
+    fn verified_client_offers_only_the_named_tls13_suites() {
+        let config = crate::tls::cipher_policy::with_tls_ciphers_env(
+            Some("TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256"),
+            || {
+                build_verified_rustls_config(
+                    RootStoreProvider::new()
+                        .snapshot()
+                        .with_bundled()
+                        .expect("roots"),
+                    &[&rustls::version::TLS13],
+                    true,
+                    ClientAlpn::Default,
+                )
+                .expect("verified config")
+            },
+        );
+        let suites: Vec<_> = config
+            .crypto_provider()
+            .cipher_suites
+            .iter()
+            .map(|suite| suite.suite())
+            .collect();
+        assert_eq!(
+            suites,
+            vec![
+                rustls::CipherSuite::TLS13_AES_256_GCM_SHA384,
+                rustls::CipherSuite::TLS13_AES_128_GCM_SHA256,
+            ]
+        );
+    }
+
+    #[cfg(not(feature = "fips"))]
+    #[test]
+    fn insecure_traffic_config_applies_the_cipher_allow_list() {
+        let (config, http1) = crate::tls::cipher_policy::with_tls_ciphers_env(
+            Some("TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256"),
+            || {
+                let config = build_insecure_traffic_rustls_config(
+                    &[&rustls::version::TLS13],
+                    ClientAlpn::Default,
+                )
+                .expect("insecure traffic config");
+                let http1 = build_insecure_traffic_rustls_config(
+                    rustls::DEFAULT_VERSIONS,
+                    ClientAlpn::Http1Only,
+                )
+                .expect("http1 insecure config");
+                (config, http1)
+            },
+        );
+        let suites: Vec<_> = config
+            .crypto_provider()
+            .cipher_suites
+            .iter()
+            .map(|suite| suite.suite())
+            .collect();
+        assert_eq!(
+            suites,
+            vec![
+                rustls::CipherSuite::TLS13_AES_256_GCM_SHA384,
+                rustls::CipherSuite::TLS13_AES_128_GCM_SHA256,
+            ]
+        );
+        assert_eq!(
+            config.alpn_protocols,
+            vec![b"h2".to_vec(), b"http/1.1".to_vec()]
+        );
+        assert_eq!(http1.alpn_protocols, vec![b"http/1.1".to_vec()]);
+        let http1_suites: Vec<_> = http1
+            .crypto_provider()
+            .cipher_suites
+            .iter()
+            .map(|suite| suite.suite())
+            .collect();
+        assert!(http1_suites.contains(&rustls::CipherSuite::TLS13_AES_256_GCM_SHA384));
+        assert!(http1_suites.contains(&rustls::CipherSuite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256));
+        assert!(!http1_suites.contains(&rustls::CipherSuite::TLS13_CHACHA20_POLY1305_SHA256));
     }
 
     #[test]
@@ -1919,6 +2063,38 @@ mod tests {
         .expect("non-FIPS insecure Azure/GCS client")
         .build()
         .expect("build Azure/GCS client");
+    }
+
+    #[cfg(not(feature = "fips"))]
+    #[test]
+    fn insecure_builders_reject_an_unknown_cipher() {
+        crate::tls::cipher_policy::with_tls_ciphers_env(Some("DHE-RSA-AES256-GCM-SHA384"), || {
+            let connection = build_tls_client_and_rustls_config_sync(
+                &TlsConfig::insecure(),
+                None,
+                CrlManager::new(),
+                &RootStoreProvider::new().snapshot(),
+                None,
+                false,
+            )
+            .expect_err("unknown cipher on the connection client");
+            let text = connection.to_string();
+            assert!(text.contains("SNOWFLAKE_TLS_CIPHERS"), "{text}");
+            assert!(text.contains("DHE-RSA-AES256-GCM-SHA384"), "{text}");
+
+            let storage = configure_http1_tls_builder(
+                Client::builder(),
+                &TlsConfig::insecure(),
+                None,
+                CrlManager::new(),
+                &RootStoreProvider::new().snapshot(),
+            )
+            .expect_err("unknown cipher on the storage client");
+            assert!(
+                storage.to_string().contains("SNOWFLAKE_TLS_CIPHERS"),
+                "{storage}"
+            );
+        });
     }
 
     #[tokio::test]

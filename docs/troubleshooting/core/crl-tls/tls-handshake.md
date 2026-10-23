@@ -64,6 +64,13 @@ or the policy that disabled TLS 1.2 — don't narrow `max_tls_version`. Only tou
 `min_tls_version`/`max_tls_version` when a network policy specifically requires
 pinning the window (parsing/validation in `sf_core/src/tls/config.rs`).
 
+`SNOWFLAKE_TLS_CIPHERS` restricts cipher suites for every TLS client in the
+process. It is an environment variable, not a connection parameter. See
+[crl-tls-settings.md](crl-tls-settings.md#snowflake_tls_ciphers). A TLS 1.3-only
+list leaves the TLS 1.2 suites at their defaults, so a policy that allows only
+`TLS_AES_128_GCM_SHA256` and `TLS_AES_256_GCM_SHA384` also sets
+`min_tls_version=tls13`.
+
 ### A3. Signature algorithm not supported
 
 rustls/aws-lc-rs accepts a fixed set of signature schemes
