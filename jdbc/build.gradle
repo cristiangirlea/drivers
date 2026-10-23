@@ -20,7 +20,7 @@ def oldJdbcVersion = '4.3.4'
 def slf4jVersion = '2.0.20'
 def lombokVersion = '1.18.48'
 // Override arrow's transitive 2.17.x (backward-compatible). Stays on 2.x (Java 8); 3.x needs Java 17.
-def jacksonVersion = '2.22.3'
+def jacksonVersion = '2.22.4'
 // jackson-annotations dropped its patch segment at 2.20, so it trails core/databind.
 def jacksonAnnotationsVersion = '2.22'
 def arrowVersion = '17.0.0'
@@ -67,10 +67,12 @@ dependencies {
     implementation "org.apache.arrow:arrow-memory-netty:${arrowVersion}"
     implementation "org.apache.arrow:arrow-c-data:${arrowVersion}"
     implementation 'com.google.protobuf:protobuf-java:4.33.6'
-    // All three pinned so the POM overrides arrow-vector's transitive 2.17.x (databind alone isn't enough).
+    // Pinned so the POM overrides arrow-vector's transitive 2.17.x (databind alone isn't enough).
     implementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
     implementation "com.fasterxml.jackson.core:jackson-core:${jacksonVersion}"
     implementation "com.fasterxml.jackson.core:jackson-annotations:${jacksonAnnotationsVersion}"
+    // Arrow requests jackson-datatype-jsr310 2.17.1 with no version of its own. Keep it on this line.
+    implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${jacksonVersion}"
 
     // test dependencies
     testImplementation 'org.junit.jupiter:junit-jupiter:5.14.4'  // 5.x = last Java 8 line; 6.x needs Java 17
@@ -571,7 +573,8 @@ def verifyThinJar = tasks.register('verifyThinJar') {
         // pin it in the POM so consumers whose Arrow graph omits it don't break.
         ['org.apache.arrow:arrow-vector', 'com.google.protobuf:protobuf-java',
          'org.slf4j:slf4j-api',
-         'com.fasterxml.jackson.core:jackson-databind'].each { want ->
+         'com.fasterxml.jackson.core:jackson-databind',
+         'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'].each { want ->
             if (!deps.contains(want)) problems << "thin POM missing dependency: ${want}"
         }
         // Logging backend stays the consumer's choice (parity with the fat jar).
