@@ -489,6 +489,31 @@ public class SnowflakeConnectionImpl implements InternalSnowflakeConnection, Del
   }
 
   @Override
+  public String getRole() {
+    checkClosed();
+    ConnectionGetInfoResponse info = coreDriverApi.connectionGetInfo(connectionHandle);
+    if (info == null || !info.hasRole()) {
+      return null;
+    }
+    return info.getRole();
+  }
+
+  @Override
+  public String getWarehouse() {
+    checkClosed();
+    ConnectionGetInfoResponse info = coreDriverApi.connectionGetInfo(connectionHandle);
+    if (info == null || !info.hasWarehouse()) {
+      return null;
+    }
+    return info.getWarehouse();
+  }
+
+  @Override
+  public String getDatabase() {
+    return getCatalog();
+  }
+
+  @Override
   public void setTransactionIsolation(int level) {
     checkClosed();
     if (level == TRANSACTION_NONE || level == TRANSACTION_READ_COMMITTED) {

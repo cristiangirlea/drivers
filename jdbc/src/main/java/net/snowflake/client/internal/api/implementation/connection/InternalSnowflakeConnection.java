@@ -67,4 +67,13 @@ public interface InternalSnowflakeConnection
 
   @Override
   String getDatabaseVersion();
+
+  @Override
+  String getRole();
+
+  @Override
+  String getWarehouse();
+
+  @Override
+  String getDatabase();
 }

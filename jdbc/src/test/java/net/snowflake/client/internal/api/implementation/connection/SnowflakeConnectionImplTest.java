@@ -37,6 +37,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.snowflake.client.api.connection.SnowflakeConnection;
 import net.snowflake.client.api.driver.SnowflakeDriver;
 import net.snowflake.client.api.exception.ErrorCode;
 import net.snowflake.client.internal.api.implementation.exception.CoreException;
@@ -659,6 +660,100 @@ class SnowflakeConnectionImplTest {
         ex = assertThrows(SFSQLException.class, () -> conn.setCatalog("OTHER_DB"));
         assertConnectionClosedException(ex);
       }
+    }
+  }
+
+  @Nested
+  class SessionGetters {
+
+    private CoreDriverApi mockCoreApi;
+
+    @BeforeEach
+    void setUp() throws Exception {
+      mockCoreApi = SnowflakeConnectionImplTestFixtures.newMockCoreApiWithCloseStubs();
+    }
+
+    private SnowflakeConnectionImpl createConnection() throws SQLException {
+      return SnowflakeConnectionImplTestFixtures.newTestConnection(mockCoreApi);
+    }
+
+    @Test
+    void shouldReturnCurrentSessionRoleWarehouseAndDatabase() throws Exception {
+      when(mockCoreApi.connectionGetInfo(any()))
+          .thenReturn(
+              ConnectionGetInfoResponse.newBuilder()
+                  .setRole("SYSADMIN")
+                  .setWarehouse("COMPUTE_WH")
+                  .setDatabase("TEST_DB")
+                  .build());
+
+      try (SnowflakeConnectionImpl conn = createConnection()) {
+        assertEquals("SYSADMIN", conn.getRole());
+        assertEquals("COMPUTE_WH", conn.getWarehouse());
+        assertEquals("TEST_DB", conn.getDatabase());
+        assertEquals(conn.getCatalog(), conn.getDatabase());
+
+        when(mockCoreApi.connectionGetInfo(any()))
+            .thenReturn(
+                ConnectionGetInfoResponse.newBuilder()
+                    .setRole("PUBLIC")
+                    .setWarehouse("OTHER_WH")
+                    .setDatabase("SECOND_DB")
+                    .build());
+
+        assertEquals("PUBLIC", conn.getRole());
+        assertEquals("OTHER_WH", conn.getWarehouse());
+        assertEquals("SECOND_DB", conn.getDatabase());
+        assertEquals(conn.getCatalog(), conn.getDatabase());
+      }
+    }
+
+    @Test
+    void shouldReturnNullWhenSessionRoleWarehouseOrDatabaseUnset() throws Exception {
+      when(mockCoreApi.connectionGetInfo(any()))
+          .thenReturn(ConnectionGetInfoResponse.getDefaultInstance());
+
+      try (SnowflakeConnectionImpl conn = createConnection()) {
+        assertNull(conn.getRole());
+        assertNull(conn.getWarehouse());
+        assertNull(conn.getDatabase());
+        assertEquals(conn.getCatalog(), conn.getDatabase());
+      }
+    }
+
+    @Test
+    void shouldReturnEmptyRoleAndWarehouseAndNullDatabaseWhenSessionNamesEmpty() throws Exception {
+      when(mockCoreApi.connectionGetInfo(any()))
+          .thenReturn(
+              ConnectionGetInfoResponse.newBuilder()
+                  .setRole("")
+                  .setWarehouse("")
+                  .setDatabase("")
+                  .build());
+
+      try (SnowflakeConnectionImpl conn = createConnection()) {
+        assertEquals("", conn.getRole());
+        assertEquals("", conn.getWarehouse());
+        assertNull(conn.getDatabase());
+        assertEquals(conn.getCatalog(), conn.getDatabase());
+      }
+    }
+
+    @Test
+    void shouldThrowConnectionClosedWhenReadingSessionContext() throws Exception {
+      try (Connection conn = boundary(createConnection())) {
+        SnowflakeConnection sf = conn.unwrap(SnowflakeConnection.class);
+        conn.close();
+        assertConnectionClosedSqlException(assertThrows(SQLException.class, sf::getRole));
+        assertConnectionClosedSqlException(assertThrows(SQLException.class, sf::getWarehouse));
+        assertConnectionClosedSqlException(assertThrows(SQLException.class, sf::getDatabase));
+      }
+    }
+
+    private void assertConnectionClosedSqlException(SQLException ex) {
+      assertEquals("Connection is closed", ex.getMessage());
+      assertEquals(ErrorCode.CONNECTION_CLOSED.getSqlState(), ex.getSQLState());
+      assertEquals(ErrorCode.CONNECTION_CLOSED.getMessageCode(), ex.getErrorCode());
     }
   }
 
