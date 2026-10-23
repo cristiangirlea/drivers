@@ -66,7 +66,7 @@ dependencies {
     implementation "org.apache.arrow:arrow-memory-core:${arrowVersion}"
     implementation "org.apache.arrow:arrow-memory-netty:${arrowVersion}"
     implementation "org.apache.arrow:arrow-c-data:${arrowVersion}"
-    implementation 'com.google.protobuf:protobuf-java:4.33.6'
+    implementation 'com.google.protobuf:protobuf-java:4.36.2'
     // Pinned so the POM overrides arrow-vector's transitive 2.17.x (databind alone isn't enough).
     implementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
     implementation "com.fasterxml.jackson.core:jackson-core:${jacksonVersion}"
