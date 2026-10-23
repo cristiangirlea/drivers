@@ -169,8 +169,22 @@ impl Connection {
     }
 
     #[napi]
-    pub fn execute(&self, env: &Env, params: ExecuteParams) -> Result<Statement> {
-        Statement::execute(self.session.clone(), params).map_err(|e| e.to_js_error(*env))
+    pub fn execute(
+        &self,
+        env: &Env,
+        params: ExecuteParams,
+        build_fallback_inline_bindings: Option<Function<(), String>>,
+    ) -> Result<Statement> {
+        let build_fallback_inline_bindings = build_fallback_inline_bindings
+            .map(|build| {
+                build
+                    .build_threadsafe_function::<()>()
+                    .weak::<true>()
+                    .build()
+            })
+            .transpose()?;
+        Statement::execute(self.session.clone(), params, build_fallback_inline_bindings)
+            .map_err(|e| e.to_js_error(*env))
     }
 
     #[napi]

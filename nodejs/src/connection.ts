@@ -11,12 +11,13 @@ import { toCoreConnectionOptions } from './connection-option-aliases.js';
 import { serializeTokenInfo, deserializeTokenInfo } from './connection-serialization.js';
 import {
   CoreConnection,
+  CoreQueryBindingFormat,
   type CoreConnectionInstance,
   type CoreStatementInstance,
   type ConnectionTokenInfo,
 } from './core/index.js';
 import { GlobalConfig } from './global-config.js';
-import { type Binds, selectBindPayload } from './query-result/binds.js';
+import { type Binds, buildBindsMap, selectBindPayload } from './query-result/binds.js';
 import { collectRows } from './query-result/rows.js';
 import { RowStatement } from './query-result/RowStatement.js';
 import { getWrapperIdentity } from './wrapper-identity.js';
@@ -512,10 +513,19 @@ export class Connection {
   }
 
   execute(options: StatementOption): RowStatement {
+    const { binds } = options;
     const bindings = selectBindPayload(
-      options.binds,
+      binds,
       this.#core.getSessionParameters().clientStageArrayBindingThreshold,
     );
+    // Binds are serialized here in JS, while the retry with inline binds after a failed stage
+    // upload runs in the bridge, so the bridge calls back for the JSON payload. The intended end
+    // state is that `#core.execute` takes the raw binds and the bridge builds the CSV or JSON
+    // payload itself; this callback goes away then.
+    const buildFallbackInlineBindings =
+      binds && bindings?.format === CoreQueryBindingFormat.Csv
+        ? () => JSON.stringify(buildBindsMap(binds))
+        : undefined;
 
     let parameters = options.parameters
       ? Object.fromEntries(
@@ -527,14 +537,17 @@ export class Connection {
     }
 
     return this.#runStatement(
-      this.#core.execute({
-        query: options.sqlText,
-        bindings: bindings ?? undefined,
-        parameters: parameters ?? undefined,
-        asyncExec: options.asyncExec,
-        requestId: options.requestId,
-        describeOnly: options.describeOnly,
-      }),
+      this.#core.execute(
+        {
+          query: options.sqlText,
+          bindings: bindings ?? undefined,
+          parameters: parameters ?? undefined,
+          asyncExec: options.asyncExec,
+          requestId: options.requestId,
+          describeOnly: options.describeOnly,
+        },
+        buildFallbackInlineBindings,
+      ),
       {
         complete: options.complete,
         streamResult: options.streamResult,

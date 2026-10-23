@@ -40,7 +40,7 @@ export declare class Connection {
   isValidAsync(): Promise<boolean>
   getSessionParameters(): KnownSessionParameters
   getTokenInfo(): ConnectionTokenInfo | null
-  execute(params: ExecuteParams): Statement
+  execute(params: ExecuteParams, buildFallbackInlineBindings?: (() => string) | undefined | null): Statement
   getQueryStatus(queryId: string): Promise<QueryStatus>
   getQueryStatusThrowIfError(queryId: string): Promise<QueryStatus>
   waitForQueryResult(queryId: string, retryIntervalMs?: number | undefined | null): Promise<undefined>

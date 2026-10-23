@@ -128,9 +128,9 @@ Ensure the public API of the statement returned by `connection.execute` is fully
   parity) for string columns. Still pending: per-type stage binding (DATE/TIME/TIMESTAMP_*/BINARY/
   BOOLEAN/VARIANT — `testArrayBind`, `testArrayBindWillNull`, `testBindWithJson`,
   `testBindWithArray`), fully-qualified table names on the stage path (`Test Array Bind - full
-  path`), stage-upload failure handling (`Test Array Bind Force Error on Upload file` — the new
-  driver surfaces the error instead of falling back to inline), and cancelling an in-flight
-  stage-bind insert (`Test Array Bind - full path with cancel`).
+  path`) and cancelling an in-flight stage-bind insert (`Test Array Bind - full path with
+  cancel`). The stage-upload failure fallback (`Test Array Bind Force Error on Upload file`) moved
+  to `nodejs/tests/e2e/query/stage-binding-fallback.test.ts` and was deleted.
 - `integration/testArrayBindCustomerTable.js` — migrated and deleted. Its single test was a
   large-scale (10000-row, 23-column) all-VARCHAR/FLOAT bulk stage bind asserting the insert
   succeeds; the stage/CSV mechanic is covered by `nodejs/tests/e2e/query/binds.test.ts` and the

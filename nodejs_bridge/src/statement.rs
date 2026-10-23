@@ -10,10 +10,11 @@ use crate::session_params::KnownSessionParameters;
 use crate::session_state::SessionState;
 use crate::validation_utils::{require_valid_query_id, require_valid_request_id};
 use napi::bindgen_prelude::{spawn, *};
+use napi::threadsafe_function::ThreadsafeFunction;
 use napi::tokio::sync::MutexGuard;
 use napi_derive::napi;
 use result::{QueryResult, ResultValue, StatementResult};
-use sf_core::apis::database_driver_v1::{BindingType, DataPtr};
+use sf_core::apis::database_driver_v1::{BindingType, DataPtr, ErrorKind};
 use sf_core::apis::operation_ctx::OperationCtx;
 use sf_core::config::settings::Setting;
 use sf_core::query_types::QueryType;
@@ -53,6 +54,9 @@ impl QueryBindings {
     }
 }
 
+pub(crate) type BuildFallbackInlineBindings =
+    ThreadsafeFunction<(), String, (), Status, false, true>;
+
 #[napi(object)]
 pub struct ExecuteParams {
     pub query: String,
@@ -76,6 +80,7 @@ impl Statement {
     pub(crate) fn execute(
         session: Session,
         mut params: ExecuteParams,
+        build_fallback_inline_bindings: Option<BuildFallbackInlineBindings>,
     ) -> std::result::Result<Self, BridgeError> {
         let request_id = resolve_request_id(params.request_id.take(), uuid::Uuid::new_v4)?;
         let operation_ctx = Arc::new(OperationCtx::with_own_token());
@@ -83,7 +88,14 @@ impl Statement {
         let task_session = session.clone();
         Ok(Self {
             result: StatementResult::from_future(async move {
-                run_execute(task_session, params, request_id, &task_ctx).await
+                run_execute_with_inline_fallback(
+                    task_session,
+                    params,
+                    build_fallback_inline_bindings,
+                    request_id,
+                    &task_ctx,
+                )
+                .await
             }),
             operation_ctx,
             request_id: Some(request_id),
@@ -345,9 +357,45 @@ fn resolve_request_id(
     }
 }
 
-async fn run_execute(
+async fn run_execute_with_inline_fallback(
     session: Session,
     params: ExecuteParams,
+    build_fallback_inline_bindings: Option<BuildFallbackInlineBindings>,
+    request_id: uuid::Uuid,
+    operation_ctx: &OperationCtx,
+) -> std::result::Result<ResultValue, BridgeError> {
+    let result = run_execute(
+        &session,
+        &params,
+        params.bindings.as_ref(),
+        request_id,
+        operation_ctx,
+    )
+    .await;
+    let Some(build_fallback_inline_bindings) = build_fallback_inline_bindings else {
+        return result;
+    };
+    match &result {
+        Err(BridgeError::Core(error)) if matches!(error.kind(), ErrorKind::StageBinding) => {
+            tracing::warn!(%error, "stage binding failed, falling back to inline binds");
+        }
+        _ => return result,
+    }
+    let data = build_fallback_inline_bindings
+        .call_async_catch(())
+        .await
+        .map_err(|thrown| BridgeError::Message(thrown.reason))?;
+    let json = QueryBindings {
+        format: QueryBindingFormat::Json,
+        data,
+    };
+    run_execute(&session, &params, Some(&json), request_id, operation_ctx).await
+}
+
+async fn run_execute(
+    session: &Session,
+    params: &ExecuteParams,
+    bindings: Option<&QueryBindings>,
     request_id: uuid::Uuid,
     operation_ctx: &OperationCtx,
 ) -> std::result::Result<ResultValue, BridgeError> {
@@ -356,15 +404,17 @@ async fn run_execute(
     let stmt = driver.statement_new(conn_handle)?;
 
     let result = async {
-        driver.statement_set_sql_query(stmt, params.query).await?;
-        if let Some(parameters) = params.parameters {
+        driver
+            .statement_set_sql_query(stmt, params.query.clone())
+            .await?;
+        if let Some(parameters) = &params.parameters {
             let options = parameters
-                .into_iter()
-                .map(|(k, v)| (k, Setting::String(v)))
+                .iter()
+                .map(|(k, v)| (k.clone(), Setting::String(v.clone())))
                 .collect();
             driver.statement_set_options(stmt, options).await?;
         }
-        let binds = params.bindings.as_ref().map(QueryBindings::as_binding_type);
+        let binds = bindings.map(QueryBindings::as_binding_type);
         if params.async_exec.unwrap_or(false) {
             let submitted = driver
                 .statement_execute_async(
