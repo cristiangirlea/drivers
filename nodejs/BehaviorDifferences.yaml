@@ -2605,3 +2605,20 @@ behavior_differences:
       the old JDBC socket default. A request that stays active longer than 300 seconds
       fails here; the old driver waited up to its 360-second request timeout. The Node
       timeout option still maps to retry_timeout.
+
+  138:
+    name: 'Client-credentials token endpoint failures expose different errors'
+    status: todo
+    type: bug
+    reviewed: false
+    is_breaking_change: true
+    impact: medium
+    old_driver_behavior: |
+      HTTP 400 with an invalid_client body fails with name AxiosError, code ERR_BAD_REQUEST, and
+      "Request failed with status code 400".
+      HTTP 200 with no access_token fails with name OperationProcessingError, code
+      OAUTH_INVALID_RESPONSE, and "\"response\" body \"access_token\" property must be a string".
+    new_driver_behavior: |
+      Both failures are login errors with name Error and code undefined. A token response that
+      omits access_token reports "Failed to login: OAuth flow failed: Failed to decode OAuth token response".
+      HTTP 400 invalid_client reports "Failed to login: OAuth flow failed: Identity Provider responded with error: invalid_client: The client secret supplied for a confidential client is invalid."

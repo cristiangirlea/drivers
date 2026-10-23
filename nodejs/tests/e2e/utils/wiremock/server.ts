@@ -43,10 +43,14 @@ export class WiremockServer {
     return server;
   }
 
+  get port(): number {
+    return this.#requirePort();
+  }
+
   get connectionOptions(): ConnectionOptions {
     return {
       host: this.#host,
-      port: this.#requirePort(),
+      port: this.port,
       protocol: 'http',
     };
   }

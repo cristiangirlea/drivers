@@ -108,13 +108,16 @@ pub fn idp_token_endpoint_missing_access_token() -> Mock {
         })))
 }
 
-/// IdP returns a generic 500 (no parseable body). Mirrors ODBC's
-/// `idp_auth_token_request_error.json` and `idp_client_token_request_error.json`.
-/// The flow surfaces `OAuthError::TokenExchange { status: 500, .. }`.
-pub fn idp_token_endpoint_token_request_error() -> Mock {
+/// IdP returns HTTP 500 with an OAuth `server_error` body. A plain-text 500
+/// is only a token-response decode failure, so this body is what proves the
+/// IdP error.
+pub fn idp_token_endpoint_server_error() -> Mock {
     Mock::given(method("POST"))
         .and(path_regex(r"^/oauth/token-request$"))
-        .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error from IdP"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+            "error": "server_error",
+            "error_description": "Internal Server Error from IdP"
+        })))
 }
 
 /// Refresh-token exchange fails with `invalid_grant`. Mirrors ODBC's

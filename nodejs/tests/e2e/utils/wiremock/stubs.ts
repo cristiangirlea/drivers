@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer';
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'ANY';
 
 export interface QueryParameterMatcher {
@@ -12,12 +14,18 @@ export interface BodyPattern {
   contains?: string;
 }
 
+export interface HeaderMatcher {
+  equalTo?: string;
+  contains?: string;
+}
+
 export interface RequestPattern {
   method: HttpMethod;
   urlPathPattern?: string;
   urlPath?: string;
   urlPattern?: string;
   queryParameters?: Record<string, QueryParameterMatcher>;
+  headers?: Record<string, HeaderMatcher>;
   bodyPatterns?: BodyPattern[];
 }
 
@@ -280,4 +288,44 @@ export function monitoringQueryStatuses(
     }
     return mapping;
   });
+}
+
+const CLIENT_CREDENTIALS_FORM_BODY_FRAGMENT =
+  'grant_type=client_credentials&client_id=123&client_secret=clientSecret';
+
+export function clientCredentialsTokenStubs(
+  status: number,
+  body: unknown,
+  expectedScope?: string,
+): StubMapping[] {
+  const response = jsonResponse(status, body);
+  const scopePatterns: BodyPattern[] =
+    expectedScope === undefined ? [] : [{ contains: `scope=${encodeURIComponent(expectedScope)}` }];
+  return [
+    {
+      request: {
+        method: 'POST',
+        urlPathPattern: '/oauth/token-request.*',
+        headers: {
+          'Content-Type': {
+            contains: 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+        },
+        bodyPatterns: [{ contains: CLIENT_CREDENTIALS_FORM_BODY_FRAGMENT }, ...scopePatterns],
+      },
+      response,
+    },
+    {
+      request: {
+        method: 'POST',
+        urlPathPattern: '/oauth/token-request.*',
+        headers: {
+          'Content-Type': { contains: 'application/x-www-form-urlencoded' },
+          Authorization: { equalTo: `Basic ${Buffer.from('123:clientSecret').toString('base64')}` },
+        },
+        bodyPatterns: [{ contains: 'grant_type=client_credentials' }, ...scopePatterns],
+      },
+      response,
+    },
+  ];
 }

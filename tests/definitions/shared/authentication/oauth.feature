@@ -21,19 +21,19 @@ Feature: OAuth Authentication
   #   * nodejs/tests/e2e/authentication/oauth.test.ts          (@nodejs_int)
   # ===========================================================================
 
-  @odbc_int @python_int @jdbc_int
+  @odbc_int @python_int @jdbc_int @nodejs_int
   Scenario: should fail OAUTH_CLIENT_CREDENTIALS when client_id is missing
     Given Authentication is set to OAUTH_CLIENT_CREDENTIALS without oauth_client_id
     When Trying to Connect
     Then Connection fails with a missing-parameter error citing oauth_client_id
 
-  @odbc_int @python_int @jdbc_int
+  @odbc_int @python_int @jdbc_int @nodejs_int
   Scenario: should fail OAUTH_CLIENT_CREDENTIALS when client_secret is missing
     Given Authentication is set to OAUTH_CLIENT_CREDENTIALS without oauth_client_secret
     When Trying to Connect
     Then Connection fails with a missing-parameter error citing oauth_client_secret
 
-  @odbc_int @python_int @jdbc_int
+  @odbc_int @python_int @jdbc_int @nodejs_int
   Scenario: should fail OAUTH_CLIENT_CREDENTIALS when token_request_url is missing
     Given Authentication is set to OAUTH_CLIENT_CREDENTIALS without oauth_token_request_url
     When Trying to Connect
@@ -52,10 +52,10 @@ Feature: OAuth Authentication
     Then Connection fails with a missing-parameter error citing token
 
   # ===========================================================================
-  # ODBC integration tests -- offline; exercise the wrapper's token
-  # forwarding for legacy AUTHENTICATOR=OAUTH and OAUTH_CLIENT_SECRET
-  # redaction in diagnostics without contacting an IdP or Snowflake.
-  # Implemented in odbc_tests/tests/integration/authentication/oauth.cpp.
+  # Shared wrapper integration tests -- offline; lowercase AUTHENTICATOR,
+  # unknown OAuth-like values, and OAUTH_CLIENT_SECRET redaction, without
+  # contacting an IdP or Snowflake.
+  # Implemented in the ODBC, Python, JDBC, and Node.js wrapper tests.
   # ===========================================================================
 
   @odbc_int @python_int @jdbc_int @nodejs_int
@@ -70,7 +70,7 @@ Feature: OAuth Authentication
     When Trying to Connect
     Then Connection fails with an authenticator-related error
 
-  @odbc_int @python_int @jdbc_int
+  @odbc_int @python_int @jdbc_int @nodejs_int
   Scenario: should not echo OAUTH_CLIENT_SECRET in diagnostics
     Given Authentication is set to OAUTH_CLIENT_CREDENTIALS with a distinctive client secret literal
     When Trying to Connect
@@ -95,14 +95,15 @@ Feature: OAuth Authentication
   #   * nodejs/tests/e2e/authentication/oauth.test.ts               (@nodejs_e2e)
   #
   # Scenario step text matches the existing sf_core comments verbatim so a
-  # single Gherkin definition validates the Rust, ODBC, Python, and JDBC test
-  # methods. The Authorization Code happy path additionally requires a
+  # single Gherkin definition validates the Rust, ODBC, Python, JDBC, and
+  # Node.js test methods. The Authorization Code happy path additionally requires a
   # real OS browser; in ODBC, Python, and JDBC we gate it behind
-  # SNOWFLAKE_OAUTH_E2E_BROWSER=1. The @core_e2e-only cached-access-token
+  # SNOWFLAKE_OAUTH_E2E_BROWSER=1. Node.js runs the live OAuth describe in the
+  # auth test container. The @core_e2e-only cached-access-token
   # short-circuit scenario pre-seeds the OS keyring directly (no browser leg)
   # and therefore cannot run in the wrappers. The two-connection token caching
   # scenario below uses the normal browser flow for the first connection and
-  # is tagged @core_e2e @odbc_e2e @python_e2e @jdbc_e2e.
+  # is tagged @core_e2e @odbc_e2e @python_e2e @jdbc_e2e @nodejs_e2e.
   # ===========================================================================
 
   @core_e2e @odbc_e2e @python_e2e @jdbc_e2e @nodejs_e2e
@@ -135,7 +136,7 @@ Feature: OAuth Authentication
     When Trying to Connect without browser interaction
     Then Login is successful and a simple query can be executed
 
-  @core_e2e @odbc_e2e @python_e2e @jdbc_e2e
+  @core_e2e @odbc_e2e @python_e2e @jdbc_e2e @nodejs_e2e
   Scenario: oauth should authenticate using client credentials flow
     Given Authentication is set to OAUTH_CLIENT_CREDENTIALS with a valid client id / secret and an external IdP token URL. Snowflake's GS does not mint CC tokens, so `oauth_token_request_url` is required up-front.
     When Trying to Connect
@@ -158,7 +159,7 @@ Feature: OAuth Authentication
     When Trying to Connect
     Then Login is successful and a simple query can be executed
 
-  @odbc_e2e @python_e2e @jdbc_e2e
+  @odbc_e2e @python_e2e @jdbc_e2e @nodejs_e2e
   Scenario: oauth should fail client credentials flow with bad client secret
     Given Authentication is set to OAUTH_CLIENT_CREDENTIALS with a valid client id, an invalid client secret and a valid token_request_url
     When Trying to Connect
@@ -176,7 +177,7 @@ Feature: OAuth Authentication
     When Trying to Connect without user
     Then Login is successful and a simple query can be executed
 
-  @python_e2e
+  @python_e2e @nodejs_e2e
   Scenario: should authenticate using client credentials flow without user
     Given Authentication is set to OAUTH_CLIENT_CREDENTIALS with a valid client id / secret and an external IdP token URL and user is omitted
     When Trying to Connect without user

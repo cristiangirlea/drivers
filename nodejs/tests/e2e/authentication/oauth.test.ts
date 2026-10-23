@@ -1,15 +1,22 @@
 import { Buffer } from 'node:buffer';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import type { Connection, ConnectionOptions } from '../../types/sdk-types.js';
 import getTestParameter, { getTestParametersFromSameSource } from '../utils/getTestParameter.js';
 import {
   baseConnectionOptions,
   connectAsyncWithErrorBD,
   destroyConnectionAsync,
+  IS_RUNNING_FOR_OLD_DRIVER,
   isRunningNewDriverWithBD,
   snowflake,
 } from '../utils/index.js';
 import { verifySimpleQuery } from '../utils/query.js';
+import {
+  clientCredentialsTokenStubs,
+  loginSuccess,
+  logoutSuccess,
+  WiremockServer,
+} from '../utils/wiremock/index.js';
 import {
   cleanBrowserProcesses,
   connectWithBrowserAutomation,
@@ -154,20 +161,44 @@ function connectWithOauthAuthorizationCode(
   );
 }
 
-describe('tests/definitions/shared/authentication/oauth.feature', () => {
-  describe('OAuth wrapper validation', () => {
-    const FAKE_HOST_CONNECTION_OPTIONS = {
-      account: 'test-account',
-      host: '127.0.0.1',
-      username: 'test-user',
-      browserActionTimeout: 2000,
-      retryTimeout: 300,
-      // TODO(SNOW-3996212): BD#90 — the old driver retries unreachable-host logins
-      // (default 7) unless this count is 0. The new driver does not accept the option
-      // and should also avoid those retries.
-      ...(isRunningNewDriverWithBD('BD#90') ? {} : { sfRetryMaxLoginRetries: 0 }),
-    };
+function getClientCredentialsOptions(): ConnectionOptions {
+  const credentialKeys = [
+    'SNOWFLAKE_TEST_OKTA_OAUTH_EXTERNAL_CLIENT_ID',
+    'SNOWFLAKE_TEST_OKTA_OAUTH_EXTERNAL_CLIENT_SECRET',
+  ] as const;
+  const credentials = getTestParametersFromSameSource(credentialKeys);
+  if (!credentials) {
+    throw new Error(`No parameters source defines ${credentialKeys.join(', ')}`);
+  }
+  const {
+    SNOWFLAKE_TEST_OKTA_OAUTH_EXTERNAL_CLIENT_ID: oauthClientId,
+    SNOWFLAKE_TEST_OKTA_OAUTH_EXTERNAL_CLIENT_SECRET: oauthClientSecret,
+  } = credentials;
+  const { username, ...withoutUser } = baseConnectionOptions;
+  void username;
+  return {
+    ...withoutUser,
+    authenticator: 'OAUTH_CLIENT_CREDENTIALS',
+    oauthClientId,
+    oauthClientSecret,
+    oauthTokenRequestUrl: getTestParameter('SNOWFLAKE_TEST_OKTA_OAUTH_TOKEN_URL', true),
+  };
+}
 
+describe('tests/definitions/shared/authentication/oauth.feature', () => {
+  const FAKE_HOST_CONNECTION_OPTIONS = {
+    account: 'test-account',
+    host: '127.0.0.1',
+    username: 'test-user',
+    browserActionTimeout: 2000,
+    retryTimeout: 300,
+    // TODO(SNOW-3996212): BD#90 — the old driver retries unreachable-host logins
+    // (default 7) unless this count is 0. The new driver does not accept the option
+    // and should also avoid those retries.
+    ...(isRunningNewDriverWithBD('BD#90') ? {} : { sfRetryMaxLoginRetries: 0 }),
+  };
+
+  describe('OAuth wrapper validation', () => {
     it('should forward AUTHENTICATOR=OAUTH with TOKEN to core', async () => {
       // Given Authentication is set to legacy OAUTH with a pre-acquired access token
       const options = {
@@ -264,6 +295,314 @@ describe('tests/definitions/shared/authentication/oauth.feature', () => {
               name: 'NetworkError',
               code: 401001,
               message: 'connect ECONNREFUSED 127.0.0.1:443',
+            },
+      );
+    });
+
+    it('should fail OAUTH_CLIENT_CREDENTIALS when client_id is missing', async () => {
+      // Given Authentication is set to OAUTH_CLIENT_CREDENTIALS without oauth_client_id
+      const options = {
+        ...FAKE_HOST_CONNECTION_OPTIONS,
+        authenticator: 'OAUTH_CLIENT_CREDENTIALS',
+        oauthClientSecret: 'test-client-secret',
+        oauthTokenRequestUrl: 'https://127.0.0.1/oauth/token',
+      } as ConnectionOptions;
+
+      // When Trying to Connect
+      if (isRunningNewDriverWithBD('BD#101')) {
+        const connection = snowflake.createConnection({ ...options });
+
+        // Then Connection fails with a missing-parameter error citing oauth_client_id
+        await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject({
+          name: 'InvalidParameterError',
+          code: undefined,
+          message: formatSingleIssueConfigurationValidationMessage(
+            'oauth_client_id',
+            "Missing required parameter 'oauth_client_id' for OAuth client credentials authentication",
+          ),
+        });
+      } else {
+        // Then Connection fails with a missing-parameter error citing oauth_client_id
+        expect(() => snowflake.createConnection({ ...options })).toThrow(
+          expect.objectContaining({
+            name: 'InvalidParameterError',
+            code: 404059,
+            message: 'Invalid oauth client id. The specified value must not be an empty string',
+          }),
+        );
+      }
+    });
+
+    it('should fail OAUTH_CLIENT_CREDENTIALS when client_secret is missing', async () => {
+      // Given Authentication is set to OAUTH_CLIENT_CREDENTIALS without oauth_client_secret
+      const options = {
+        ...FAKE_HOST_CONNECTION_OPTIONS,
+        authenticator: 'OAUTH_CLIENT_CREDENTIALS',
+        oauthClientId: 'test-client-id',
+        oauthTokenRequestUrl: 'https://127.0.0.1/oauth/token',
+      } as ConnectionOptions;
+
+      // When Trying to Connect
+      if (isRunningNewDriverWithBD('BD#101')) {
+        const connection = snowflake.createConnection({ ...options });
+
+        // Then Connection fails with a missing-parameter error citing oauth_client_secret
+        await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject({
+          name: 'InvalidParameterError',
+          code: undefined,
+          message: formatSingleIssueConfigurationValidationMessage(
+            'oauth_client_secret',
+            "Missing required parameter 'oauth_client_secret' for OAuth client credentials authentication",
+          ),
+        });
+      } else {
+        // Then Connection fails with a missing-parameter error citing oauth_client_secret
+        expect(() => snowflake.createConnection({ ...options })).toThrow(
+          expect.objectContaining({
+            name: 'InvalidParameterError',
+            code: 404060,
+            message: 'Invalid oauth client secret. The specified value must not be an empty string',
+          }),
+        );
+      }
+    });
+
+    it('should fail OAUTH_CLIENT_CREDENTIALS when token_request_url is missing', async () => {
+      // Given Authentication is set to OAUTH_CLIENT_CREDENTIALS without oauth_token_request_url
+      const options = {
+        ...FAKE_HOST_CONNECTION_OPTIONS,
+        authenticator: 'OAUTH_CLIENT_CREDENTIALS',
+        oauthClientId: 'test-client-id',
+        oauthClientSecret: 'test-client-secret',
+      } as ConnectionOptions;
+
+      // When Trying to Connect
+      const connection = snowflake.createConnection({ ...options });
+
+      // Then Connection fails with a missing-parameter error citing oauth_token_request_url
+      await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject(
+        isRunningNewDriverWithBD('BD#101')
+          ? {
+              name: 'InvalidParameterError',
+              code: undefined,
+              message: formatSingleIssueConfigurationValidationMessage(
+                'oauth_token_request_url',
+                "Missing required parameter 'oauth_token_request_url' for OAuth client credentials authentication",
+              ),
+            }
+          : {
+              name: 'Error',
+              code: 'ECONNREFUSED',
+              message: 'connect ECONNREFUSED 127.0.0.1:443',
+            },
+      );
+    });
+
+    it('should fail OAUTH_CLIENT_CREDENTIALS when token_request_url uses a file scheme', async () => {
+      // The old driver rejects this at createConnection with code 404061.
+      const options = {
+        ...FAKE_HOST_CONNECTION_OPTIONS,
+        authenticator: 'OAUTH_CLIENT_CREDENTIALS',
+        oauthClientId: 'test',
+        oauthClientSecret: 'secretValue',
+        oauthTokenRequestUrl: 'file://test.app',
+      } as ConnectionOptions;
+
+      if (isRunningNewDriverWithBD('BD#101')) {
+        const connection = snowflake.createConnection({ ...options });
+        await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject({
+          name: 'InvalidParameterError',
+          code: undefined,
+          message:
+            "Configuration error: Invalid value 'file://test.app/' for parameter 'oauth_token_request_url' - OAuth endpoint must use https (http is permitted only for loopback hosts)",
+        });
+      } else {
+        expect(() => snowflake.createConnection({ ...options })).toThrow(
+          expect.objectContaining({
+            name: 'InvalidParameterError',
+            code: 404061,
+            message:
+              'Invalid oauth token request URL. The specified value must be a valid URL starting with the https or http protocol.',
+          }),
+        );
+      }
+    });
+
+    it('should not echo OAUTH_CLIENT_SECRET in diagnostics', async () => {
+      // Given Authentication is set to OAUTH_CLIENT_CREDENTIALS with a distinctive client secret literal
+      const secret = 'ZZ_NODE_SECRET_NEEDLE_OAUTH_CC_ZZ';
+      const options = {
+        ...FAKE_HOST_CONNECTION_OPTIONS,
+        authenticator: 'OAUTH_CLIENT_CREDENTIALS',
+        oauthClientId: 'test-client-id',
+        oauthClientSecret: secret,
+        oauthTokenRequestUrl: 'https://127.0.0.1/oauth/token',
+      } as ConnectionOptions;
+
+      // When Trying to Connect
+      const connection = snowflake.createConnection({ ...options });
+      const error = await connectAsyncWithErrorBD(connection).catch((caught: unknown) => caught);
+      if (!(error instanceof Error)) {
+        throw new Error('Expected connection attempt to fail');
+      }
+
+      // Then No diagnostic record contains the literal client secret
+      let diagnostic = '';
+      for (let current: unknown = error; current instanceof Error; current = current.cause) {
+        diagnostic += `${current.name}: ${current.message}\n`;
+      }
+      expect(diagnostic).not.toContain(secret);
+    });
+  });
+
+  function createWiremockClientCredentialsConnection(wiremock: WiremockServer): Connection {
+    return snowflake.createConnection({
+      ...FAKE_HOST_CONNECTION_OPTIONS,
+      authenticator: 'OAUTH_CLIENT_CREDENTIALS',
+      role: 'ANALYST',
+      oauthClientId: '123',
+      oauthClientSecret: 'clientSecret',
+      oauthTokenRequestUrl: `http://localhost:${wiremock.port}/oauth/token-request`,
+      ...(IS_RUNNING_FOR_OLD_DRIVER ? { oauthHttpAllowed: true } : {}),
+    });
+  }
+
+  describe('client credentials token endpoint', () => {
+    let wiremock: WiremockServer;
+
+    beforeAll(async () => {
+      wiremock = await WiremockServer.spawn();
+    });
+
+    beforeEach(async () => {
+      await wiremock.reset();
+    });
+
+    afterAll(async () => {
+      await wiremock.destroy();
+    });
+
+    it('should omit scope from the client credentials token request when role and scope are unset', async () => {
+      await wiremock.stub([
+        ...clientCredentialsTokenStubs(200, {
+          access_token: 'cc-access-token',
+          token_type: 'Bearer',
+          expires_in: 600,
+        }),
+        loginSuccess(),
+        logoutSuccess(),
+      ]);
+      const connection = snowflake.createConnection({
+        ...FAKE_HOST_CONNECTION_OPTIONS,
+        ...wiremock.connectionOptions,
+        authenticator: 'OAUTH_CLIENT_CREDENTIALS',
+        oauthClientId: '123',
+        oauthClientSecret: 'clientSecret',
+        oauthTokenRequestUrl: `http://localhost:${wiremock.port}/oauth/token-request`,
+        ...(IS_RUNNING_FOR_OLD_DRIVER ? { oauthHttpAllowed: true } : {}),
+      });
+      await connection.connectAsync();
+      destroyConnectionAfterTest(connection);
+
+      const requests = await wiremock.findRequests('/oauth/token-request.*');
+      expect(requests.length).toBeGreaterThan(0);
+      for (const request of requests) {
+        expect(request.body).not.toContain('scope=');
+      }
+    });
+
+    it('should derive the client credentials token scope from role', async () => {
+      await wiremock.stub([
+        ...clientCredentialsTokenStubs(
+          200,
+          {
+            access_token: 'cc-access-token',
+            token_type: 'Bearer',
+            expires_in: 600,
+          },
+          'session:role:ANALYST',
+        ),
+        loginSuccess(),
+        logoutSuccess(),
+      ]);
+      const connection = snowflake.createConnection({
+        ...FAKE_HOST_CONNECTION_OPTIONS,
+        ...wiremock.connectionOptions,
+        authenticator: 'OAUTH_CLIENT_CREDENTIALS',
+        role: 'ANALYST',
+        oauthClientId: '123',
+        oauthClientSecret: 'clientSecret',
+        oauthTokenRequestUrl: `http://localhost:${wiremock.port}/oauth/token-request`,
+        ...(IS_RUNNING_FOR_OLD_DRIVER ? { oauthHttpAllowed: true } : {}),
+      });
+      await connection.connectAsync();
+      destroyConnectionAfterTest(connection);
+
+      const requests = await wiremock.findRequests('/oauth/token-request.*');
+      expect(requests.length).toBeGreaterThan(0);
+      for (const request of requests) {
+        const params = new URLSearchParams(request.body);
+        expect(params.get('scope')).toBe('session:role:ANALYST');
+      }
+    });
+
+    it('should fail client credentials when the token response omits access_token', async () => {
+      await wiremock.stub(
+        clientCredentialsTokenStubs(
+          200,
+          {
+            token_type: 'Bearer',
+            username: 'user',
+            scope: 'refresh_token session:role:ANALYST',
+            expires_in: 600,
+            refresh_token_expires_in: 86399,
+            idpInitiated: false,
+          },
+          'session:role:ANALYST',
+        ),
+      );
+      await expect(
+        connectAsyncWithErrorBD(createWiremockClientCredentialsConnection(wiremock)),
+      ).rejects.toMatchObject(
+        isRunningNewDriverWithBD('BD#138')
+          ? {
+              name: 'Error',
+              code: undefined,
+              message: 'Failed to login: OAuth flow failed: Failed to decode OAuth token response',
+            }
+          : {
+              name: 'OperationProcessingError',
+              code: 'OAUTH_INVALID_RESPONSE',
+              message: '"response" body "access_token" property must be a string',
+            },
+      );
+    });
+
+    it('should fail client credentials when the token endpoint returns invalid_client', async () => {
+      await wiremock.stub(
+        clientCredentialsTokenStubs(
+          400,
+          {
+            error: 'invalid_client',
+            error_description: 'The client secret supplied for a confidential client is invalid.',
+          },
+          'session:role:ANALYST',
+        ),
+      );
+      await expect(
+        connectAsyncWithErrorBD(createWiremockClientCredentialsConnection(wiremock)),
+      ).rejects.toMatchObject(
+        isRunningNewDriverWithBD('BD#138')
+          ? {
+              name: 'Error',
+              code: undefined,
+              message:
+                'Failed to login: OAuth flow failed: Identity Provider responded with error: invalid_client: The client secret supplied for a confidential client is invalid.',
+            }
+          : {
+              name: 'AxiosError',
+              code: 'ERR_BAD_REQUEST',
+              message: 'Request failed with status code 400',
             },
       );
     });
@@ -379,6 +718,41 @@ describe('tests/definitions/shared/authentication/oauth.feature', () => {
       });
     });
 
+    // Skipped: bad-secret tests cause pipeline flakiness by blocking the test account.
+    it.skip('oauth should fail client credentials flow with bad client secret', async () => {
+      // Given Authentication is set to OAUTH_CLIENT_CREDENTIALS with a valid client id, an invalid client secret and a valid token_request_url
+      const options = getClientCredentialsOptions();
+      const connection = snowflake.createConnection({
+        ...({
+          ...options,
+          username: options.oauthClientId,
+          oauthClientSecret: 'invalid_client_secret_12345',
+        } as ConnectionOptions),
+      });
+
+      // When Trying to Connect
+      const connecting = connectAsyncWithErrorBD(connection);
+
+      // Then Connection fails with an authentication / login error
+      await expect(connecting).rejects.toMatchObject(
+        isRunningNewDriverWithBD('BD#138')
+          ? {
+              name: 'Error',
+              code: undefined,
+              message: expect.stringContaining('invalid_client'),
+            }
+          : {
+              name: 'AxiosError',
+              code: 'ERR_BAD_REQUEST',
+              message: 'Request failed with status code 400',
+            },
+      );
+      await expectConnectionNotUp(
+        connection,
+        isRunningNewDriverWithBD('BD#61') ? TERMINATED_QUERY : NEVER_ESTABLISHED_QUERY,
+      );
+    });
+
     it('oauth should authenticate using lowercase oauth authenticator', async () => {
       // Given Authentication is set to lowercase oauth and a valid pre-acquired OAuth access token is supplied via TOKEN
       const { user, password } = requireOktaCredentials();
@@ -411,6 +785,61 @@ describe('tests/definitions/shared/authentication/oauth.feature', () => {
 
       // Then Login is successful and a simple query can be executed
       await verifySimpleQuery(connection);
+    });
+
+    it('oauth should authenticate using client credentials flow', async () => {
+      // Given Authentication is set to OAUTH_CLIENT_CREDENTIALS with a valid client id / secret and an external IdP token URL. Snowflake's GS does not mint CC tokens, so `oauth_token_request_url` is required up-front.
+      const options = getClientCredentialsOptions();
+
+      // When Trying to Connect
+      const connection = await createLiveOauthConnection({
+        ...options,
+        username: options.oauthClientId,
+      });
+
+      // Then Login is successful and a simple query can be executed
+      await verifySimpleQuery(connection);
+    });
+
+    it('should authenticate using client credentials flow without user', async () => {
+      // Given Authentication is set to OAUTH_CLIENT_CREDENTIALS with a valid client id / secret and an external IdP token URL and user is omitted
+      const options = getClientCredentialsOptions();
+
+      // When Trying to Connect without user
+      const connection = await createLiveOauthConnection(options);
+
+      // Then Login is successful and a simple query can be executed
+      await verifySimpleQuery(connection);
+    });
+
+    it('should reject an invalid client ID in Client Credentials flow', async () => {
+      const options = getClientCredentialsOptions();
+      const connection = snowflake.createConnection({
+        ...({
+          ...options,
+          username: options.oauthClientId,
+          oauthClientId: 'invalidClientId',
+        } as ConnectionOptions),
+      });
+      // TODO(SNOW-4350899): add better errors for invalid client_id errors.
+      // Follow-up: https://github.com/snowflakedb/drivers/pull/2897
+      await expect(connectAsyncWithErrorBD(connection)).rejects.toMatchObject(
+        isRunningNewDriverWithBD('BD#138')
+          ? {
+              name: 'Error',
+              code: undefined,
+              message: 'Failed to login: OAuth flow failed: Failed to decode OAuth token response',
+            }
+          : {
+              name: 'AxiosError',
+              code: 'ERR_BAD_REQUEST',
+              message: 'Request failed with status code 400',
+            },
+      );
+      await expectConnectionNotUp(
+        connection,
+        isRunningNewDriverWithBD('BD#61') ? TERMINATED_QUERY : NEVER_ESTABLISHED_QUERY,
+      );
     });
 
     it('should reject a mismatched username for a pre-acquired token', async () => {

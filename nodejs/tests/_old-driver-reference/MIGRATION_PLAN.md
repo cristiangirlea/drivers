@@ -70,6 +70,13 @@ Deferred work — covered **last**, only once the corresponding feature support 
     Python, JDBC, and ODBC skip that live negative so a junk token does not lock the
     shared account. Core ignores every OAuth e2e test behind `auth_oauth_e2e`, including
     the success tests. The skip is the disposition; that old test was not migrated.
+  - [`authentication/testOauthOktaClientCredentials.js`](./authentication/testOauthOktaClientCredentials.js)
+    — split between [`../e2e/authentication/oauth.test.ts`](../e2e/authentication/oauth.test.ts)
+    and core. Successful connection and the invalid client ID run in the Node file.
+    That test keeps the token-endpoint failure and unusable-connection assertions.
+    Mismatched username is core
+    `should_reject_a_mismatched_username_for_client_credentials` in `oauth_scenarios.rs`.
+    Wiremock mints a token, returns `390309`, the connect fails, and the connection stays down.
   - [`authentication/testOauthSnowflakeAuthorizationCode.js`](./authentication/testOauthSnowflakeAuthorizationCode.js)
     — deleted from the snapshot. Per test:
     - `Successful connection` is `oauth should authenticate using authorization code flow`.
@@ -180,6 +187,10 @@ Review when working on structured-types support in the new driver:
     the config knob, not the runtime behavior).
   - `Connection file configuration test` — password and default-profile cases are covered by
     `nodejs/tests/e2e/session/connection-config-file.test.ts`. The oauth name variants stay here.
+  - `test - connect CLIENT CREDENTIALS - Snowflake` and
+    `test - connect CLIENT CREDENTIALS - inconsistent username` are deferred. They are
+    manual runs of connect plus SELECT 1, and of the mismatch sentence. They add no
+    unique automated OAuth contract coverage. The same quick manual runs can be migrated later.
 
 
 ### PUT / GET
@@ -235,8 +246,16 @@ Each of these depends on the corresponding auth provider landing in `sf_core` + 
   - Single-use refresh: the old test only checks that connect does not throw. Core
     `should_omit_single_use_refresh_flag_from_refresh_grant_body` checks the refresh body, which
     that test did not.
-- `integration/wiremock/testOauthClientCredentials.js` — migrate once Client Credentials is
-  implemented in `sf_core` and the new Node driver.
+- `integration/wiremock/testOauthClientCredentials.js` — the four cases are covered
+  separately. Successful connection and `SELECT 1` are the live Node test. Empty scope is
+  `should omit scope from the client credentials token request when role and scope are unset`
+  in [`../e2e/authentication/oauth.test.ts`](../e2e/authentication/oauth.test.ts), which
+  connects and checks the token body has no `scope=`. HTTP 400 `invalid_client` is the Node test
+  `should fail client credentials when the token endpoint returns invalid_client`, which
+  returns that old mapping's 400 body. A missing `access_token` is the core
+  integration test plus the Node tests that branch on BD 138. The kept `OAUTH_TYPE`
+  assertion checks `data.OAUTH_TYPE`, not the old `data.CLIENT_ENVIRONMENT.OAUTH_TYPE`
+  matcher.
 - `integration/wiremock/testOauthPat.js` — migrate once PAT is implemented in `sf_core` and the
   new Node driver.
 - `integration/wiremock/testOauthRefreshToken.js` — once all auth providers are in `sf_core`,

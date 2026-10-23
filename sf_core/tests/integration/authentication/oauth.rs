@@ -102,7 +102,7 @@ impl OAuthTestFixture {
     }
 
     /// Build a fixture configured for the OAuth Client Credentials flow.
-    fn with_client_credentials(user: &str) -> Self {
+    pub(crate) fn with_client_credentials(user: &str) -> Self {
         let mock = MockServerWithTls::start();
         let token_url = format!("{}/oauth/token-request", mock.http_url());
 
@@ -630,6 +630,15 @@ fn should_login_with_client_credentials_using_external_idp() {
     // Then Login is successful and CC tokens are NOT cached
     // (CC is stateless by design — tokens are never cached).
     OAuthTestFixture::assert_success(result, "CC happy path to succeed");
+    let login_request = fixture
+        .mock
+        .received_requests()
+        .into_iter()
+        .find(|request| request.url.path() == "/session/v1/login-request")
+        .expect("Snowflake login request");
+    let login_body: serde_json::Value =
+        serde_json::from_slice(&login_request.body).expect("valid Snowflake login request JSON");
+    assert_eq!(login_body["data"]["OAUTH_TYPE"], "OAUTH_CLIENT_CREDENTIALS");
     assert!(
         fixture.cached_access_token().is_none(),
         "CC must not cache access tokens"
@@ -674,23 +683,17 @@ fn should_not_short_circuit_client_credentials_from_cached_access_token() {
 
 #[test]
 fn should_fail_client_credentials_when_idp_returns_500() {
-    // Given the CC fixture is wired with an IdP that returns 500
+    // Given the CC fixture is wired with an IdP that returns server_error
     let user = unique_user("oauth_cc_500");
     let fixture = OAuthTestFixture::with_client_credentials(&user);
-    fixture
-        .mock
-        .mount(oauth::idp_token_endpoint_token_request_error());
+    fixture.mock.mount(oauth::idp_token_endpoint_server_error());
 
     // When Trying to Connect
     let result = fixture.connect();
 
-    // Then Connection fails with a transport / token-exchange error and
+    // Then Connection fails with an OAuth server_error and
     // the cache is untouched (CC never writes to it)
-    OAuthTestFixture::assert_error(
-        result,
-        &["TokenExchange", "OAuth", "500", "OAuthFlow"],
-        "CC IdP 500 error",
-    );
+    OAuthTestFixture::assert_error(result, &["server_error"], "CC IdP server_error");
     assert!(
         fixture.cached_access_token().is_none(),
         "CC IdP failure must not have written anything to the cache"
@@ -714,15 +717,10 @@ fn should_fail_client_credentials_when_idp_returns_invalid_scope() {
     // names the OAuth error code but never echoes the client secret
     // (redacted IdP error; client secret must never leak). The error class is `OAuthFlow → IdpError`.
     let err = result.expect_err("CC invalid_scope must fail");
-    let pattern_hit = [
-        "IdpError",
-        "invalid_scope",
-        "Identity Provider",
-        "OAuthFlow",
-    ]
-    .iter()
-    .any(|p| err.contains(p));
-    assert!(pattern_hit, "expected IdP error message, got: {err}");
+    assert!(
+        err.contains("invalid_scope"),
+        "expected IdP error message, got: {err}"
+    );
     assert!(
         !err.contains("test-oauth-client-secret"),
         "client secret must never appear in an OAuth error: {err}"
@@ -747,7 +745,7 @@ fn should_fail_client_credentials_when_idp_response_is_missing_access_token() {
     // a useless Bearer token to GS).
     OAuthTestFixture::assert_error(
         result,
-        &["MissingAccessToken", "access_token", "OAuthFlow", "OAuth"],
+        &["OAuth token response did not include an access_token"],
         "CC missing access_token error",
     );
 }

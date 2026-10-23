@@ -9,9 +9,10 @@ fn count_login_requests(mock: &MockServerWithTls) -> usize {
         .count()
 }
 
-fn assert_username_mismatch_leaves_connection_down(
+fn assert_username_mismatch_connect_failure(
     fixture: &OAuthTestFixture,
     result: Result<(), String>,
+    expected_token_endpoint_request_count: usize,
 ) {
     let error = result.expect_err("username mismatch must fail connect");
     assert!(error.contains("390309"), "expected 390309, got: {error}");
@@ -26,8 +27,8 @@ fn assert_username_mismatch_leaves_connection_down(
     );
     assert_eq!(
         count_token_endpoint_requests(&fixture.mock),
-        0,
-        "390309 must not refresh"
+        expected_token_endpoint_request_count,
+        "unexpected token endpoint request count"
     );
     let query = fixture
         .client
@@ -52,7 +53,7 @@ fn should_reject_a_mismatched_username_for_a_pre_acquired_token() {
     let result = fixture.connect();
 
     // Then Connection fails with "The user you were trying to authenticate as differs from the user tied to the access token."
-    assert_username_mismatch_leaves_connection_down(&fixture, result);
+    assert_username_mismatch_connect_failure(&fixture, result, 0);
 }
 
 #[test]
@@ -69,5 +70,24 @@ fn should_reject_a_mismatched_username_for_authorization_code() {
     let result = fixture.connect();
 
     // Then Connection fails with "The user you were trying to authenticate as differs from the user tied to the access token."
-    assert_username_mismatch_leaves_connection_down(&fixture, result);
+    assert_username_mismatch_connect_failure(&fixture, result, 0);
+}
+
+#[test]
+fn should_reject_a_mismatched_username_for_client_credentials() {
+    // Given Authentication is set to client credentials with a username that is not the user tied to the access token
+    let user = unique_user("oauth_cc_390309");
+    let fixture = OAuthTestFixture::with_client_credentials(&user);
+    fixture
+        .mock
+        .mount(oauth::idp_token_endpoint_success_client_credentials());
+    fixture
+        .mock
+        .mount(oauth::snowflake_login_oauth_username_mismatch_390309());
+
+    // When Trying to Connect
+    let result = fixture.connect();
+
+    // Then Connection fails with "The user you were trying to authenticate as differs from the user tied to the access token."
+    assert_username_mismatch_connect_failure(&fixture, result, 1);
 }

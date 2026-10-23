@@ -55,6 +55,8 @@ class AuthBrowserParamDiagnosticsTests(unittest.TestCase):
         self.assertIn("SNOWFLAKE_TEST_OAUTH_SNOWFLAKE_REDIRECT_URI", KEYS)
         self.assertIn("SNOWFLAKE_TEST_OAUTH_AUTHORIZATION_URL", KEYS)
         self.assertIn("SNOWFLAKE_TEST_OAUTH_TOKEN_REQUEST_URL", KEYS)
+        self.assertIn("SNOWFLAKE_TEST_OKTA_OAUTH_EXTERNAL_CLIENT_ID", KEYS)
+        self.assertIn("SNOWFLAKE_TEST_OKTA_OAUTH_EXTERNAL_CLIENT_SECRET", KEYS)
 
 
 if __name__ == "__main__":
