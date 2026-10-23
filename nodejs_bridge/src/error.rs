@@ -381,6 +381,11 @@ fn is_snowflake_unreachable(error: &ApiError) -> bool {
     match error {
         ApiError::HttpRequest { .. } => true,
         ApiError::Login { source, .. }
+            if matches!(source.as_ref(), RestError::OperationTimeout { .. }) =>
+        {
+            true
+        }
+        ApiError::Login { source, .. }
         | ApiError::Query { source, .. }
         | ApiError::SessionRefresh { source, .. }
         | ApiError::TokenRequest { source, .. } => matches!(
