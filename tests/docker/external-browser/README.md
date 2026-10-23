@@ -5,7 +5,7 @@ browser (external browser auth, OAuth flows, etc.).
 
 ## What's in the image
 
-- **Node.js 24** (Debian Bookworm base)
+- **Node.js 22** (minimum version declared in `nodejs/package.json` `engines.node`; Debian Bookworm base)
 - **Headless Chromium** on port 9222 via `/chromium-headless.sh`
 - **Playwright** + browser credential helper scripts (TOTP, OAuth token, PAT)
 - **Python 3** + pip + venv (for building/running the Python connector tests)

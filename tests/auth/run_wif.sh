@@ -46,7 +46,7 @@ export ARTIFACT_DIR="$THIS_DIR/wif/artifacts"
 # Public runtime image. Shares the rockylinux:8 base used to build the binary,
 # so the prebuilt binary's glibc/libstdc++ deps line up.
 RUNTIME_IMAGE="${WIF_RUNTIME_IMAGE:-rockylinux:8}"
-NODEJS_RUNTIME_IMAGE="${WIF_NODEJS_RUNTIME_IMAGE:-node:24-slim}"
+NODEJS_RUNTIME_IMAGE="${WIF_NODEJS_RUNTIME_IMAGE:-node:22-slim}"
 
 if [[ -n "${WIF_LANE:-}" ]]; then
   echo "ERROR: WIF_LANE is unused; pass the lane as the first argument" >&2

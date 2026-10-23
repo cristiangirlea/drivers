@@ -1,7 +1,11 @@
-# Node 22 is our minimum supported version for driver users (nodejs/package.json engines).
-# Auth tests run on 24 because it avoids the Node 20 issue with Vitest and the Node 22 issue with npm 10.
-# The risk of missing a Node 22 compatibility issue is minimal, because auth is implemented in Rust core (has almost no NodeJS wrapper-side code).
-FROM node:24-bookworm
+FROM node:22-bookworm
+
+# npm 10.x (the version bundled with Node 22) crashes on `npm install`
+# with "Cannot read properties of null (reading 'edgesOut')". npm 11
+# does not hit it. https://github.com/npm/cli/issues/9787
+# TODO: Remove this once npm fixes the bug, so the build runs on the npm that
+# ships with Node — matching how most users install the driver.
+RUN npm install -g npm@11
 
 WORKDIR /mnt/host
 
