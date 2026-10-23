@@ -78,6 +78,10 @@ dev = [
     "types-protobuf",
 ]
 
+# 0.13.4 removes the compromised eMudhra root. 0.13.5 also rejects those intermediate keys.
+[tool.uv]
+required-version = ">=0.13.5"
+
 [tool.hatch.version]
 path = "src/snowflake/connector/version.py"
 

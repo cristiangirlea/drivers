@@ -34,7 +34,8 @@ steps:
       repo: "snowflakedb/drivers"
     command: |
       set -euo pipefail
-      pip3 install pyyaml -q
+      python3 -m pip install --upgrade pip
+      python3 -m pip install pyyaml -q
       for driver_group in "rust:integ,e2e" "python:integ,e2e" "odbc:integ,e2e" "java:e2e"; do
         driver="$${driver_group%%:*}"
         group="$${driver_group##*:}"
@@ -379,6 +380,7 @@ steps:
         bash -c '
           set -euo pipefail
           ./scripts/decode_secrets.sh
+          python3 -m pip install --upgrade pip
           python3 -m pip install snowflake-connector-python -q
           python3 scripts/cleanup_env.py \
             --parameter-path /workdir/parameters.json

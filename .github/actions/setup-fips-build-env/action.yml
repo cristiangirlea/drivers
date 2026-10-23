@@ -64,6 +64,8 @@ runs:
       shell: pwsh
       run: |
         $ErrorActionPreference = "Stop"
+        python -m pip install --upgrade pip
+        if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed with exit code $LASTEXITCODE" }
         python -m pip install "cmake>=3,<4"
         $cmakeDir = python -c "import cmake; print(cmake.CMAKE_BIN_DIR)"
         $cmakeExe = Join-Path $cmakeDir "cmake.exe"

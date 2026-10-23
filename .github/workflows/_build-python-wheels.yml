@@ -168,7 +168,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Generate protobuf code
         working-directory: python
@@ -222,7 +222,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Set up Python
         shell: bash
@@ -268,7 +268,7 @@ jobs:
         if: runner.os != 'Linux'
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Set up all Python versions
         if: runner.os != 'Linux'
@@ -517,7 +517,8 @@ jobs:
       - name: Check wheels with auditwheel (Linux)
         if: runner.os == 'Linux'
         run: |
-          pip install auditwheel
+          python3 -m pip install --upgrade pip
+          python3 -m pip install auditwheel
           for whl in python/dist/*.whl; do
             echo "=== $(basename $whl) ==="
             auditwheel show "$whl"
@@ -632,7 +633,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Set up Python ${{ matrix.py }}
         shell: bash

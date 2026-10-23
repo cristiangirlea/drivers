@@ -87,7 +87,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Set up Python 3.13
         run: uv python install 3.13
@@ -218,7 +218,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       # Restore-only: shares the `uv-ubuntu-latest-3.13-test-...` key family
       # with test-python.yml. Cache key intentionally omits cloud_provider —
@@ -402,6 +402,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y unixodbc-dev build-essential zlib1g-dev ccache ninja-build
           # odbc_tests/CMakeLists.txt requires CMake >= 4.0; ubuntu-latest ships ~3.30.
+          python3 -m pip install --upgrade pip
           python3 -m pip install 'cmake>=4.0.3'
           cmake --version
 

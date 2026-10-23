@@ -58,7 +58,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -73,6 +73,7 @@ jobs:
 
       - name: Setup Python
         run: |
+          pip install --upgrade pip
           pip install pre-commit hatch "virtualenv<21.0.0"
 
       - name: Set up Node.js
@@ -116,6 +117,7 @@ jobs:
         # outputs byte-identical to a production build. `protoc-gen-mypy` must
         # be on PATH for the .pyi stubs, so install it alongside protoc.
         run: |
+          pip install --upgrade pip
           pip install mypy-protobuf
           cargo run --locked -p proto_generator --bin proto_generator -- \
             --generator python \

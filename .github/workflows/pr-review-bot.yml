@@ -110,7 +110,9 @@ jobs:
         # subprocess-based (gh CLI + curl). Pinning to a major version
         # keeps the workflow reproducible without requiring a Renovate
         # bump for every PyYAML patch release.
-        run: pip install "pyyaml>=6,<7"
+        run: |
+          pip install --upgrade pip
+          pip install "pyyaml>=6,<7"
 
       - name: Assign reviewer and prepare Slack payload
         id: build
@@ -160,7 +162,9 @@ jobs:
         # PyYAML is the only third-party Python dependency the bot
         # needs (to parse .github/reviewers.yml); see the assign job
         # for the rationale on the version pin.
-        run: pip install "pyyaml>=6,<7"
+        run: |
+          pip install --upgrade pip
+          pip install "pyyaml>=6,<7"
 
       - name: Build reminder digest payload
         id: build

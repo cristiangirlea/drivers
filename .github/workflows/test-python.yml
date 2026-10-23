@@ -159,7 +159,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Set up Python 3.13
         shell: bash
@@ -270,7 +270,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Set up Python 3.13
         shell: bash
@@ -397,7 +397,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Set up Python 3.13
         shell: bash
@@ -506,7 +506,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       # UV cache key intentionally omits matrix.cloud_provider: uv installs the same wheel +
       # dependencies regardless of which cloud provider the E2E tests target, so sharing one
@@ -859,6 +859,7 @@ jobs:
       - name: Cleanup test PATs
         continue-on-error: true
         run: |
+          python -m pip install --upgrade pip
           python -m pip install snowflake-connector-python -q
           python scripts/cleanup_env.py \
             --parameter-path "${{ github.workspace }}/parameters.json"
@@ -911,7 +912,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Set up Python ${{ matrix.py }}
         shell: bash
@@ -971,7 +972,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       - name: Restore uv cache
         id: uv-cache-flaky
@@ -1100,7 +1101,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.9.28"
+          version: "0.13.5"
 
       # A python_tests cell that failed before its upload step leaves no
       # artifact. That failure already fails python-status through

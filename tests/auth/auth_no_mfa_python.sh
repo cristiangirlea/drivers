@@ -11,6 +11,7 @@ VENV_DIR="${WORKSPACE_ROOT}/.venv-auth-no-mfa"
 python3 -m venv "${VENV_DIR}"
 # shellcheck disable=SC1091
 source "${VENV_DIR}/bin/activate"
+pip install --upgrade pip
 
 cd "${WORKSPACE_ROOT}/python"
 

@@ -92,7 +92,9 @@ jobs:
           python-version: '3.12'
 
       - name: Install Snowflake CLI
-        run: pip install --quiet snowflake-cli
+        run: |
+          pip install --upgrade pip
+          pip install --quiet snowflake-cli
 
       # Build a connections.toml for `snow` from the decoded parameters.json.
       # Supports key-pair (preferred) or password auth. The connection is named

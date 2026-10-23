@@ -200,6 +200,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "$commandName failed with exit code $LASTEXITCODE" }
           }
 
+          Invoke-Checked "pip install --upgrade pip" { python -m pip install --upgrade pip }
           Invoke-Checked "pip install cmake" { python -m pip install "cmake>=4.0.3" }
           $cmakePath = (Get-Command cmake.exe).Source | Split-Path
           echo "CMAKE_DIR=$cmakePath" >> $env:GITHUB_ENV
@@ -404,6 +405,7 @@ jobs:
           # Prefer `python3 -m pip` over bare `pip` so we don't depend on PATH resolution
           # pointing at the expected Python. The pip wheel is an official Kitware artifact
           # and installs in ~15s (vs ~60s for the .sh installer).
+          python3 -m pip install --upgrade pip
           python3 -m pip install 'cmake>=4.0.3'
           cmake --version
 
@@ -449,6 +451,7 @@ jobs:
             & $command
             if ($LASTEXITCODE -ne 0) { throw "$commandName failed with exit code $LASTEXITCODE" }
           }
+          Invoke-Checked "pip install --upgrade pip" { python -m pip install --upgrade pip }
           Invoke-Checked "pip install cmake" { python -m pip install "cmake>=4.0.3" }
           $cmakePath = (Get-Command cmake.exe).Source | Split-Path
           echo "CMAKE_DIR=$cmakePath" >> $env:GITHUB_ENV
@@ -618,6 +621,7 @@ jobs:
       - name: Cleanup test PATs
         continue-on-error: true
         run: |
+          python -m pip install --upgrade pip
           python -m pip install snowflake-connector-python -q
           python scripts/cleanup_env.py \
             --parameter-path "${{ github.workspace }}/parameters.json"
