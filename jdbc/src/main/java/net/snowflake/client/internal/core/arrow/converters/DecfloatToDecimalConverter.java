@@ -11,6 +11,8 @@ import org.apache.arrow.vector.ValueVector;
 
 class DecfloatToDecimalConverter extends AbstractArrowVectorConverter {
 
+  private static final int MAX_PLAIN_UNSIGNED_CHARACTERS = 38;
+
   private final ArrowBackedColumn column;
 
   public DecfloatToDecimalConverter(ValueVector vector, int idx, DataConversionContext context) {
@@ -116,7 +118,47 @@ class DecfloatToDecimalConverter extends AbstractArrowVectorConverter {
     if (isNull(index)) {
       return null;
     }
-    return toBigDecimal(index).toEngineeringString();
+    return formatDecfloat(toBigDecimal(index));
+  }
+
+  private static String formatDecfloat(BigDecimal value) {
+    if (value.signum() == 0) {
+      return "0";
+    }
+    BigDecimal stripped = value.stripTrailingZeros();
+    if (fitsInPlainDecimal(stripped)) {
+      return stripped.toPlainString();
+    }
+    return toNormalizedScientific(stripped);
+  }
+
+  private static boolean fitsInPlainDecimal(BigDecimal value) {
+    int precision = value.precision();
+    int scale = value.scale();
+    int unsignedLength;
+    if (scale <= 0) {
+      unsignedLength = precision - scale;
+    } else if (precision > scale) {
+      unsignedLength = precision + 1;
+    } else {
+      unsignedLength = scale + 2;
+    }
+    return unsignedLength <= MAX_PLAIN_UNSIGNED_CHARACTERS;
+  }
+
+  private static String toNormalizedScientific(BigDecimal value) {
+    String digits = value.unscaledValue().abs().toString();
+    int exponent = digits.length() - 1 - value.scale();
+    StringBuilder result = new StringBuilder();
+    if (value.signum() < 0) {
+      result.append('-');
+    }
+    result.append(digits.charAt(0));
+    if (digits.length() > 1) {
+      result.append('.').append(digits, 1, digits.length());
+    }
+    result.append('e').append(exponent);
+    return result.toString();
   }
 
   @Override

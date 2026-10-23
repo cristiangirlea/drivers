@@ -89,6 +89,126 @@ public class DecfloatToDecimalConverterTest extends BaseConverterTest {
     }
   }
 
+  @Test
+  public void shouldFormatZeroAndPlainDecfloatWithinThirtyEightCharacters() throws Exception {
+    assertDecfloatStrings(
+        new BigDecimal[] {
+          BigDecimal.ZERO,
+          new BigDecimal("123.456"),
+          new BigDecimal("1.23E-7"),
+          new BigDecimal("-42"),
+          new BigDecimal("-1.5"),
+          new BigDecimal("-789.012"),
+          new BigDecimal(BigInteger.valueOf(-987), 17),
+        },
+        new String[] {
+          "0", "123.456", "0.000000123", "-42", "-1.5", "-789.012", "-0.00000000000000987",
+        });
+  }
+
+  @Test
+  public void shouldFormatWholeNumberDecfloatAsPlainDecimal() throws Exception {
+    assertDecfloatStrings(
+        new BigDecimal[] {
+          new BigDecimal(BigInteger.ONE, -2),
+          new BigDecimal(BigInteger.ONE, -6),
+          new BigDecimal("100"),
+          new BigDecimal("1000000"),
+        },
+        new String[] {"100", "1000000", "100", "1000000"});
+  }
+
+  @Test
+  public void shouldFormatDecfloatInNormalizedScientificNotationPastThirtyEightCharacters()
+      throws Exception {
+    BigDecimal thirtyEightDigitInteger = new BigDecimal(BigInteger.TEN.pow(37));
+    BigDecimal thirtyEightSigWithFraction =
+        new BigDecimal(BigInteger.TEN.pow(37).add(BigInteger.valueOf(8)), 1);
+    assertDecfloatStrings(
+        new BigDecimal[] {
+          new BigDecimal("1.2e200"),
+          new BigDecimal("1E+16384"),
+          new BigDecimal("1.2345678901234567890123456789012345678E+100"),
+          new BigDecimal("-1.234E+8000"),
+          new BigDecimal(BigInteger.valueOf(123), -35),
+          new BigDecimal(BigInteger.valueOf(123), -36),
+          new BigDecimal(BigInteger.ONE, 36),
+          new BigDecimal(BigInteger.ONE, 37),
+          thirtyEightDigitInteger,
+          thirtyEightSigWithFraction,
+        },
+        new String[] {
+          "1.2e200",
+          "1e16384",
+          "1.2345678901234567890123456789012345678e100",
+          "-1.234e8000",
+          "12300000000000000000000000000000000000",
+          "1.23e38",
+          "0.000000000000000000000000000000000001",
+          "1e-37",
+          thirtyEightDigitInteger.toPlainString(),
+          "1." + zeros(36) + "8e36",
+        });
+  }
+
+  @Test
+  public void shouldFormatDecfloatToStringWithoutChangingNumericValue() throws Exception {
+    BigDecimal scientific = new BigDecimal("1.2e200");
+    BigDecimal plain = new BigDecimal("123.456");
+    BigDecimal hundred = new BigDecimal(BigInteger.ONE, -2);
+    BigDecimal million = new BigDecimal(BigInteger.ONE, -6);
+    try (VectorSchemaRoot root = VectorSchemaRoot.create(setupSchema(), allocator)) {
+      ArrowVectorConverter converter =
+          loadDecfloat(root, scientific, plain, hundred, million, BigDecimal.ZERO, null);
+      assertEquals("1.2e200", converter.toString(0));
+      assertEquals("123.456", converter.toString(1));
+      assertEquals("100", converter.toString(2));
+      assertEquals("1000000", converter.toString(3));
+      assertEquals("0", converter.toString(4));
+      assertNull(converter.toString(5));
+      assertEquals(scientific, converter.toBigDecimal(0));
+      assertEquals(plain, converter.toBigDecimal(1));
+      assertEquals(0, new BigDecimal("100").compareTo(converter.toBigDecimal(2)));
+      assertEquals(0, new BigDecimal("1000000").compareTo(converter.toBigDecimal(3)));
+    }
+  }
+
+  private void assertDecfloatStrings(BigDecimal[] values, String[] expected) throws Exception {
+    try (VectorSchemaRoot root = VectorSchemaRoot.create(setupSchema(), allocator)) {
+      ArrowVectorConverter converter = loadDecfloat(root, values);
+      for (int i = 0; i < expected.length; i++) {
+        assertEquals(expected[i], converter.toString(i));
+      }
+    }
+  }
+
+  private ArrowVectorConverter loadDecfloat(VectorSchemaRoot root, BigDecimal... values) {
+    StructVector vector = (StructVector) root.getVector("col_one");
+    VarBinaryVector significand = (VarBinaryVector) vector.getChild("significand");
+    SmallIntVector exponent = (SmallIntVector) vector.getChild("exponent");
+    vector.allocateNew();
+    for (int i = 0; i < values.length; i++) {
+      if (values[i] == null) {
+        vector.setNull(i);
+      } else {
+        significand.setSafe(i, values[i].unscaledValue().toByteArray());
+        exponent.setSafe(i, (short) -values[i].scale());
+        vector.setIndexDefined(i);
+      }
+    }
+    vector.setValueCount(values.length);
+    root.setRowCount(values.length);
+    return new DecfloatToDecimalConverter(vector, 0, this);
+  }
+
+  private static String zeros(int count) {
+    StringBuilder out = new StringBuilder(count);
+    for (int i = 0; i < count; i++) {
+      out.append('0');
+    }
+    return out.toString();
+  }
+
   private static Schema setupSchema() {
     Map<String, String> metadata = new HashMap<>();
     metadata.put("logicalType", "DECFLOAT");

@@ -91,6 +91,34 @@ public class DecfloatTests extends SnowflakeIntegrationTestBase
   }
 
   @Test
+  public void shouldFormatDecfloatGetStringAtThePlainCharacterBoundary() throws Exception {
+    // Given Snowflake client is logged in
+    Connection connection = getDefaultConnection();
+
+    // When a 38-digit DECFLOAT integer and 1.23e38 are selected
+    String plainThirtyEightDigits = "12300000000000000000000000000000000000";
+    String sql = "SELECT '" + plainThirtyEightDigits + "'::DECFLOAT, '1.23e38'::DECFLOAT";
+    withQueryResult(
+        connection,
+        sql,
+        resultSet -> {
+          // Then the 38-digit integer stays plain and 1.23e38 is normalized scientific
+          assertTrue(resultSet.next(), "Expected one row for type: DECFLOAT");
+          assertEquals(plainThirtyEightDigits, resultSet.getString(1));
+          assertFalse(resultSet.wasNull(), "Column 1 getString should not be NULL for DECFLOAT");
+          assertEquals("1.23e38", resultSet.getString(2));
+          assertFalse(resultSet.wasNull(), "Column 2 getString should not be NULL for DECFLOAT");
+          assertEquals(
+              0,
+              new BigDecimal("1.23E+38").compareTo(resultSet.getBigDecimal(2)),
+              "Column 2 numeric value should be unchanged for DECFLOAT");
+          assertFalse(
+              resultSet.wasNull(), "Column 2 getBigDecimal should not be NULL for DECFLOAT");
+          assertFalse(resultSet.next(), "Expected exactly one row for type: DECFLOAT");
+        });
+  }
+
+  @Test
   public void shouldSelectDecfloatLiterals() throws Exception {
     // Given Snowflake client is logged in
     Connection connection = getDefaultConnection();

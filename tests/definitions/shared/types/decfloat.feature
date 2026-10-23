@@ -29,6 +29,12 @@ Feature: DECFLOAT type support
     When Query "SELECT '12345678901234567890123456789012345678'::DECFLOAT, '1.2345678901234567890123456789012345678E+100'::DECFLOAT, '1.2345678901234567890123456789012345678E-100'::DECFLOAT" is executed
     Then Result should preserve all 38 digits for each value
 
+  @jdbc_e2e
+  Scenario: should format decfloat getString at the plain character boundary
+    Given Snowflake client is logged in
+    When a 38-digit DECFLOAT integer and 1.23e38 are selected
+    Then the 38-digit integer stays plain and 1.23e38 is normalized scientific
+
   @python_e2e @odbc_e2e @jdbc_e2e @nodejs_e2e
   Scenario Outline: should handle <case> exponent values from literals
     Given Snowflake client is logged in
