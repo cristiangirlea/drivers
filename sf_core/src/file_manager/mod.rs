@@ -5098,4 +5098,34 @@ mod tests {
 
         assert!(!absent.exists(), "nothing should be created by the cleanup");
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn get_three_slash_windows_drive_path_uses_the_real_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let other = tempfile::tempdir().expect("cwd");
+        let canonical_dir = dunce::canonicalize(dir.path()).expect("canonicalize real dir");
+        let rendered = dir.path().to_string_lossy();
+        let gs_paths = [
+            format!("/{}", rendered.replace('\\', "/")),
+            format!("/{}", rendered.replace('/', "\\")),
+        ];
+
+        for gs in gs_paths {
+            for cwd in [None, Some(other.path())] {
+                let resolved = resolve_against_cwd(&gs, cwd);
+                let (output, _) =
+                    prepare_download_output_paths(&resolved.to_string_lossy(), "data.parquet")
+                        .unwrap_or_else(|e| {
+                            panic!("GET {gs} cwd={cwd:?} resolved to {resolved:?}: {e}")
+                        });
+                let written_dir = dunce::canonicalize(output.parent().unwrap_or(&output))
+                    .unwrap_or_else(|e| panic!("canonicalize {output:?}: {e}"));
+                assert_eq!(
+                    written_dir, canonical_dir,
+                    "GET {gs} cwd={cwd:?} resolved to {resolved:?} and wrote {output:?}"
+                );
+            }
+        }
+    }
 }
