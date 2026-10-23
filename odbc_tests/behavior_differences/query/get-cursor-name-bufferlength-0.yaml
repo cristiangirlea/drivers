@@ -1,0 +1,19 @@
+name: "SQLGetCursorName NameLengthPtr under old iODBC is not stable for BufferLength 0"
+status: allowed
+type: bugfix
+reviewed: false
+is_breaking_change: false
+impact: low
+old_driver_behavior: |
+  Under iODBC, SQLGetCursorName with BufferLength 0 and a non-NULL buffer
+  returns SQL_SUCCESS_WITH_INFO and SQLSTATE 01004. NameLengthPtr is
+  sometimes the ANSI character count and sometimes a different value, so
+  one expected length does not hold across runs.
+new_driver_behavior: |
+  Under iODBC the same call returns SQL_SUCCESS_WITH_INFO and SQLSTATE
+  01004, and NameLengthPtr is the cursor name's ANSI character count.
+description: |
+  The old-driver length on this path is not stable enough to pin. The
+  reference test skips the old driver under iODBC and still requires the
+  ANSI character count for the new driver and for unixODBC.
+legacy_id: 174

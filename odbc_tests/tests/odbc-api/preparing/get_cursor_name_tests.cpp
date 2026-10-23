@@ -205,6 +205,9 @@ TEST_CASE_METHOD(StmtDefaultDSNFixture, "SQLGetCursorName: NULL CursorName buffe
 
 TEST_CASE_METHOD(DbcDefaultDSNFixture, "SQLGetCursorName: 01004 with BufferLength of 0 and non-NULL buffer",
                  "[odbc-api][cursorname][preparing]") {
+  SKIP_OLD_IODBC("BD#get-cursor-name-bufferlength-0",
+                 "NameLengthPtr for BufferLength 0 is not stable on the old driver under iODBC");
+
   SQLRETURN ret = SQLConnect(dbc_handle(), sqlchar(dsn_name().c_str()), SQL_NTS, nullptr, 0, nullptr, 0);
   REQUIRE(ret == SQL_SUCCESS);
 
